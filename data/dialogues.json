@@ -1,0 +1,83 @@
+{
+  "intro": {
+    "welcome": [
+      {"speaker": "CONTROL", "text": "Agente, bienvenido a la Operaci\u00f3n DEADLOCK."},
+      {"speaker": "CONTROL", "text": "Una organizaci\u00f3n criminal abandon\u00f3 su sede hace 48 horas. La evidencia sigue ah\u00ed."},
+      {"speaker": "CONTROL", "text": "Tu misi\u00f3n: infiltrar la sede y descifrar toda la informaci\u00f3n clasificada."},
+      {"speaker": "CONTROL", "text": "Cada sala contiene evidencia protegida con un m\u00e9todo criptogr\u00e1fico distinto."},
+      {"speaker": "CONTROL", "text": "Explora la oficina. Elige por d\u00f3nde empezar."}
+    ]
+  },
+  "hub": {
+    "enter": [
+      {"speaker": "CONTROL", "text": "Est\u00e1s en el pasillo principal. Hay cuatro salas por investigar."},
+      {"speaker": "CONTROL", "text": "Haz clic en cualquier puerta para entrar. Puedes explorar en el orden que prefieras."}
+    ],
+    "all_done": [
+      {"speaker": "CONTROL", "text": "\u00a1Todas las salas han sido descifradas! Dir\u00edgete a la salida para completar la misi\u00f3n."}
+    ]
+  },
+  "caesar": {
+    "enter": [
+      {"speaker": "ANALISTA", "text": "La nota estaba debajo del escritorio. El texto no tiene sentido..."},
+      {"speaker": "ANALISTA", "text": "Parece un cifrado por desplazamiento simple. Gira la rueda hasta que las palabras tengan sentido."}
+    ],
+    "success": [
+      {"speaker": "ANALISTA", "text": "\u00a1Descifrado! La nota revela coordenadas de una reuni\u00f3n secreta."},
+      {"speaker": "CONTROL", "text": "Buen trabajo. El cifrado C\u00e9sar es b\u00e1sico, pero fue el inicio de todo."}
+    ],
+    "error": [
+      {"speaker": "ANALISTA", "text": "No... ese desplazamiento no produce texto legible. Sigue intentando."}
+    ]
+  },
+  "base64": {
+    "enter": [
+      {"speaker": "ANALISTA", "text": "Los archivos del servidor est\u00e1n codificados. No es cifrado real..."},
+      {"speaker": "ANALISTA", "text": "Base64 es solo codificaci\u00f3n. Arrastra los bloques al orden correcto para decodificar."}
+    ],
+    "success": [
+      {"speaker": "ANALISTA", "text": "\u00a1Decodificado! El archivo contiene una lista de contactos."},
+      {"speaker": "CONTROL", "text": "Base64 nunca fue dise\u00f1ado para ocultar informaci\u00f3n. Solo para transportarla."}
+    ],
+    "error": [
+      {"speaker": "ANALISTA", "text": "Ese orden no produce texto v\u00e1lido. Los bloques deben ir en secuencia."}
+    ]
+  },
+  "hash": {
+    "enter": [
+      {"speaker": "ANALISTA", "text": "Encontr\u00e9 la base de datos de contrase\u00f1as. Est\u00e1n guardadas como hashes."},
+      {"speaker": "ANALISTA", "text": "No puedo revertirlos, pero tengo una lista de contrase\u00f1as comunes. Si alguna coincide, tengo acceso."}
+    ],
+    "success": [
+      {"speaker": "ANALISTA", "text": "\u00a1Acceso conseguido! La contrase\u00f1a del director era predecible."},
+      {"speaker": "CONTROL", "text": "Las rainbow tables son poderosas contra contrase\u00f1as d\u00e9biles. Por eso el salting es vital."}
+    ],
+    "error": [
+      {"speaker": "ANALISTA", "text": "Esa conexi\u00f3n no es correcta. Verifica el hash de esa palabra."}
+    ],
+    "reverse_blocked": [
+      {"speaker": "ANALISTA", "text": "Los hashes son funciones de una sola v\u00eda. No puedes revertirlos."}
+    ]
+  },
+  "diffie_hellman": {
+    "enter": [
+      {"speaker": "ANALISTA", "text": "Intercept\u00e9 una comunicaci\u00f3n entre dos agentes."},
+      {"speaker": "ANALISTA", "text": "Est\u00e1n negociando una clave compartida en tiempo real. Si deduzco su clave, puedo leer el mensaje."}
+    ],
+    "success": [
+      {"speaker": "ANALISTA", "text": "\u00a1Clave interceptada! Ahora puedo descifrar toda la comunicaci\u00f3n."},
+      {"speaker": "CONTROL", "text": "Diffie-Hellman es la base de la criptograf\u00eda moderna. HTTPS, SSH, Signal... todo lo usa."}
+    ],
+    "error": [
+      {"speaker": "ANALISTA", "text": "La clave no coincide. Recalcula: K = B elevado a tu secreto, m\u00f3dulo p."}
+    ]
+  },
+  "ending": {
+    "complete": [
+      {"speaker": "CONTROL", "text": "Misi\u00f3n completada, agente. Toda la evidencia ha sido descifrada."},
+      {"speaker": "CONTROL", "text": "Has demostrado dominio sobre los fundamentos de la criptograf\u00eda."},
+      {"speaker": "CONTROL", "text": "C\u00e9sar, Base64, SHA-256, Diffie-Hellman... las capas de la seguridad digital."},
+      {"speaker": "CONTROL", "text": "DEADLOCK ha sido neutralizado. Buen trabajo."}
+    ]
+  }
+}

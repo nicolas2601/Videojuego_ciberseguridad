@@ -1,0 +1,45 @@
+{
+  "caesar": {
+    "cipher_text": "PHHW PH",
+    "correct_shift": 3,
+    "plain_text": "MEET ME",
+    "hints": [
+      "El cifrado C\u00e9sar desplaza cada letra un n\u00famero fijo en el alfabeto.",
+      "El texto descifrado deber\u00eda ser una frase corta en ingl\u00e9s con sentido.",
+      "El desplazamiento correcto es un n\u00famero entre 1 y 5."
+    ],
+    "debriefing": "C\u00e9sar invent\u00f3 este cifrado en el siglo I a.C. Hoy es trivialmente rompible \u2014 solo 25 combinaciones posibles. La rueda que acabas de usar se llama 'disco de Alberti' y fue la primera m\u00e1quina de cifrado port\u00e1til de la historia."
+  },
+  "base64": {
+    "encoded": "SGVsbG8gV29ybGQh",
+    "blocks": ["SGVs", "bG8g", "V29y", "bGQh"],
+    "decoded": "Hello World!",
+    "hints": [
+      "Base64 divide los datos en grupos de 6 bits, codificados como caracteres.",
+      "Cada bloque de 4 chars Base64 representa exactamente 3 bytes.",
+      "El orden correcto es el mismo que en el string original del servidor."
+    ],
+    "debriefing": "Base64 convierte datos binarios en texto ASCII transportable. Se invent\u00f3 para enviar archivos por email (que solo soportaba texto). NO es cifrado \u2014 cualquiera puede decodificarlo. El padding '=' indica bytes faltantes en el \u00faltimo bloque."
+  },
+  "hash": {
+    "candidates": ["password", "123456", "qwerty", "letmein", "deadlock"],
+    "target_word": "deadlock",
+    "hints": [
+      "Los hashes son funciones de una sola v\u00eda \u2014 no puedes revertirlos.",
+      "Calcula el SHA-256 de cada candidato y compara con los hashes del archivo.",
+      "La contrase\u00f1a del director es el nombre de la operaci\u00f3n."
+    ],
+    "debriefing": "Un hash criptogr\u00e1fico transforma cualquier dato en una huella digital de tama\u00f1o fijo. SHA-256 es est\u00e1ndar para almacenar contrase\u00f1as. Las 'rainbow tables' como la que usaste existen en el mundo real \u2014 por eso las contrase\u00f1as fuertes y el 'salting' son esenciales."
+  },
+  "diffie_hellman": {
+    "g": 5,
+    "p": 23,
+    "b_secret": 15,
+    "hints": [
+      "A = g elevado a tu n\u00famero secreto, m\u00f3dulo p.",
+      "Recibir\u00e1s B del otro lado. Tu clave compartida es B^a mod p.",
+      "Prueba con a=6. Calcula A=5^6 mod 23, luego K=B^6 mod 23."
+    ],
+    "debriefing": "Diffie-Hellman (1976) permiti\u00f3 por primera vez a dos personas crear una clave secreta compartida sobre un canal p\u00fablico inseguro. Es la base de HTTPS, SSH y Signal. El problema del logaritmo discreto hace que calcular 'a' a partir de A = g^a mod p sea computacionalmente inviable con n\u00fameros reales de 2048+ bits."
+  }
+}
