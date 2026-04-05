@@ -1,94 +1,177 @@
 import pygame
 from game.constants import (WIDTH, HEIGHT, C_BG, C_BG2, C_BG3, C_BORDER, C_TEXT_PRI,
-    C_TEXT_SEC, C_TEXT_HINT, C_ACCENT, C_GREEN, C_RED, C_PANEL, C_WHITE, PUZZLE_SCENES)
-from game.ui.tile_renderer import draw_floor, get_separate_sprite
+    C_TEXT_SEC, C_ACCENT, C_GREEN, C_NEON, C_WHITE, C_PANEL,
+    PLAYER_SPEED, PLAYER_SIZE, PUZZLE_SCENES)
+from game.ui.draw_assets import (draw_player, draw_desk, draw_monitor, draw_chair,
+    draw_plant, draw_filing_cabinet, draw_server_rack, draw_door, draw_whiteboard,
+    draw_office_floor, draw_wall, draw_interact_prompt, draw_text_box)
 from game.ui.dialogue import DialogueBox
 from game.ui.hud import HUD
 
 
-# Door layout positions (x, y) for 4 puzzle rooms + exit
-_DOOR_POSITIONS = {
-    "caesar":        (140,  160),
-    "base64":        (740,  160),
-    "hash":          (140,  420),
-    "diffie_hellman": (740, 420),
-}
-_EXIT_POS = (440, 310)
-_DOOR_W = 360
-_DOOR_H = 180
-_EXIT_W = 360
-_EXIT_H = 80
+# ── Door definitions ─────────────────────────────────────────────
+# Each door: scene_key, x, y, color, label
+_DOORS = [
+    {"key": "caesar",         "x": 100,  "y": 80,  "color": PUZZLE_SCENES["caesar"]["color"],
+     "label": "CESAR"},
+    {"key": "base64",         "x": 1130, "y": 80,  "color": PUZZLE_SCENES["base64"]["color"],
+     "label": "BASE64"},
+    {"key": "hash",           "x": 100,  "y": 560, "color": PUZZLE_SCENES["hash"]["color"],
+     "label": "HASH"},
+    {"key": "diffie_hellman", "x": 1130, "y": 560, "color": PUZZLE_SCENES["diffie_hellman"]["color"],
+     "label": "D-H"},
+]
+
+_EXIT_DOOR = {"x": 616, "y": 48, "color": C_GREEN, "label": "SALIDA"}
+
+# Door dimensions (from draw_door: w=48, h=64)
+_DOOR_W = 48
+_DOOR_H = 64
+
+# Interaction radius
+_INTERACT_DIST = 50
+
+# Wall height
+_WALL_Y = 0
+_WALL_H = 40
 
 
 class HubScene:
     def __init__(self, manager):
         self.manager = manager
 
-        # Fonts
-        self.font_name = pygame.font.SysFont("monospace", 20, bold=True)
-        self.font_sub = pygame.font.SysFont("monospace", 14)
-        self.font_status = pygame.font.SysFont("monospace", 13, bold=True)
-        self.font_icon = pygame.font.SysFont("monospace", 28, bold=True)
-        self.font_count = pygame.font.SysFont("monospace", 14, bold=True)
+        # Player state — center of office
+        self.px = WIDTH // 2 - PLAYER_SIZE // 2
+        self.py = HEIGHT // 2 - PLAYER_SIZE // 2
+        self.direction = "down"
+
+        # Movement keys held
+        self.keys_held = {pygame.K_w: False, pygame.K_a: False,
+                          pygame.K_s: False, pygame.K_d: False}
 
         # HUD
         self.hud = HUD()
-        completed = len(manager.completed_scenes & {"caesar", "base64", "hash", "diffie_hellman"})
-        self.hud.set_info(
-            scene_name="SEDE PRINCIPAL",
-            layer_text=f"SALAS: {completed}/4"
-        )
+        self._update_hud()
 
         # Dialogue
         self.dialogue = DialogueBox()
         self._show_initial_dialogue()
 
-        # Build door rects
-        self.door_rects = {}
-        for key, (dx, dy) in _DOOR_POSITIONS.items():
-            self.door_rects[key] = pygame.Rect(dx, dy, _DOOR_W, _DOOR_H)
-
-        # Exit door (only shown when all complete)
-        self.exit_rect = pygame.Rect(_EXIT_POS[0], _EXIT_POS[1], _EXIT_W, _EXIT_H)
-
-        self.hovered_door = None
-
-        # Pre-render floor
+        # Pre-render floor surface
         self.floor_surf = pygame.Surface((WIDTH, HEIGHT))
-        draw_floor(self.floor_surf, tile_col=0, tile_row=0)
-        # Darken the floor
-        dark = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        dark.fill((0, 0, 0, 160))
-        self.floor_surf.blit(dark, (0, 0))
+        draw_office_floor(self.floor_surf)
 
-        # Load decorative office sprites
-        self._load_decor()
+        # Build collision rects for furniture and walls
+        self.furniture = self._build_furniture()
+        self.wall_rects = self._build_walls()
+        self.collision_rects = self.wall_rects + [r for r, _ in self.furniture]
 
-    def _load_decor(self):
-        """Load decorative sprites placed between doors."""
-        self.decor_sprites = []
-        decor_defs = [
-            ("Sprite-0002.png", 2, 560, 200),
-            ("Sprite-0021.png", 2, 110, 360),
-            ("Sprite-0022.png", 2, 1130, 360),
-            ("Sprite-0007.png", 2, 660, 560),
-            ("Sprite-0005.png", 2, 440, 560),
+        # Build door rects for collision and interaction
+        self.door_rects = []
+        for d in _DOORS:
+            self.door_rects.append((
+                pygame.Rect(d["x"] - 2, d["y"] - 2, _DOOR_W + 4, _DOOR_H + 4),
+                d["key"]
+            ))
+
+        # Exit door rect
+        self.exit_rect = pygame.Rect(
+            _EXIT_DOOR["x"] - 2, _EXIT_DOOR["y"] - 2,
+            _DOOR_W + 4, _DOOR_H + 4
+        )
+
+        # Nearby door for interaction prompt
+        self.nearby_door = None  # (key, x, y) or None
+
+    # ── Furniture layout ─────────────────────────────────────────
+
+    def _build_furniture(self):
+        """Return list of (pygame.Rect, draw_func) for all furniture."""
+        items = []
+
+        # -- Desks with monitors and chairs (4 workstations) --
+        # Center-left workstation
+        items.append((pygame.Rect(320, 200, 96, 60), "desk1"))
+        items.append((pygame.Rect(340, 195, 40, 42), "monitor1"))
+        items.append((pygame.Rect(330, 268, 28, 30), "chair1"))
+
+        # Center-right workstation
+        items.append((pygame.Rect(860, 200, 96, 60), "desk2"))
+        items.append((pygame.Rect(880, 195, 40, 42), "monitor2"))
+        items.append((pygame.Rect(870, 268, 28, 30), "chair2"))
+
+        # Lower-center-left workstation
+        items.append((pygame.Rect(320, 440, 96, 60), "desk3"))
+        items.append((pygame.Rect(340, 435, 40, 42), "monitor3"))
+        items.append((pygame.Rect(330, 508, 28, 30), "chair3"))
+
+        # Lower-center-right workstation
+        items.append((pygame.Rect(860, 440, 96, 60), "desk4"))
+        items.append((pygame.Rect(880, 435, 40, 42), "monitor4"))
+        items.append((pygame.Rect(870, 508, 28, 30), "chair4"))
+
+        # -- Filing cabinets along walls --
+        items.append((pygame.Rect(240, 70, 32, 56), "cabinet1"))
+        items.append((pygame.Rect(1010, 70, 32, 56), "cabinet2"))
+        items.append((pygame.Rect(240, 600, 32, 56), "cabinet3"))
+        items.append((pygame.Rect(1010, 600, 32, 56), "cabinet4"))
+
+        # -- Plants in corners --
+        items.append((pygame.Rect(50, 160, 28, 30), "plant1"))
+        items.append((pygame.Rect(1200, 160, 28, 30), "plant2"))
+        items.append((pygame.Rect(50, 530, 28, 30), "plant3"))
+        items.append((pygame.Rect(1200, 530, 28, 30), "plant4"))
+
+        # -- Server racks --
+        items.append((pygame.Rect(580, 140, 32, 80), "server1"))
+        items.append((pygame.Rect(668, 140, 32, 80), "server2"))
+
+        # -- Whiteboards on top wall --
+        items.append((pygame.Rect(440, 48, 64, 40), "wb1"))
+        items.append((pygame.Rect(776, 48, 64, 40), "wb2"))
+
+        return items
+
+    def _build_walls(self):
+        """Boundary walls the player cannot cross."""
+        t = 8  # wall thickness
+        return [
+            pygame.Rect(0, 0, WIDTH, _WALL_H + t),          # top wall
+            pygame.Rect(0, 0, t, HEIGHT),                     # left wall
+            pygame.Rect(WIDTH - t, 0, t, HEIGHT),             # right wall
+            pygame.Rect(0, HEIGHT - t, WIDTH, t),             # bottom wall
         ]
-        for name, scale, x, y in decor_defs:
-            try:
-                img = get_separate_sprite(name, scale=scale)
-                self.decor_sprites.append((img, x, y))
-            except Exception:
-                pass
+
+    # ── Dialogue ─────────────────────────────────────────────────
 
     def _show_initial_dialogue(self):
-        """Show welcome or all-done dialogue."""
-        if self.manager.all_puzzles_complete():
-            msgs = self.manager.dialogues.get("hub", {}).get("all_done", [])
+        count = len(self.manager.completed_scenes
+                     & {"caesar", "base64", "hash", "diffie_hellman"})
+        hub_dialogues = self.manager.dialogues.get("hub", {})
+        if count == 0:
+            msgs = hub_dialogues.get("enter", [])
+        elif count == 1:
+            msgs = hub_dialogues.get("progress_1", [])
+        elif count == 2:
+            msgs = hub_dialogues.get("progress_2", [])
+        elif count == 3:
+            msgs = hub_dialogues.get("progress_3", [])
         else:
-            msgs = self.manager.dialogues.get("hub", {}).get("enter", [])
+            msgs = hub_dialogues.get("all_done", [])
         if msgs:
             self.dialogue.show(msgs)
+
+    # ── HUD ──────────────────────────────────────────────────────
+
+    def _update_hud(self):
+        completed = len(self.manager.completed_scenes
+                        & {"caesar", "base64", "hash", "diffie_hellman"})
+        self.hud.set_info(
+            scene_name="SEDE PRINCIPAL",
+            layer_text=f"SALAS: {completed}/4"
+        )
+
+    # ── Events ───────────────────────────────────────────────────
 
     def handle_event(self, event):
         # Dialogue takes priority
@@ -96,50 +179,131 @@ class HubScene:
             self.dialogue.handle_event(event)
             return
 
-        if event.type == pygame.MOUSEMOTION:
-            self.hovered_door = None
-            for key, rect in self.door_rects.items():
-                if rect.collidepoint(event.pos):
-                    self.hovered_door = key
-                    break
-            if self.manager.all_puzzles_complete() and self.exit_rect.collidepoint(event.pos):
-                self.hovered_door = "__exit__"
+        if event.type == pygame.KEYDOWN:
+            if event.key in self.keys_held:
+                self.keys_held[event.key] = True
 
-        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            for key, rect in self.door_rects.items():
-                if rect.collidepoint(event.pos):
-                    self.manager.change_scene(key)
-                    return
-            if self.manager.all_puzzles_complete() and self.exit_rect.collidepoint(event.pos):
-                self.manager.change_scene("ending")
+            # Interact with nearby door
+            if event.key == pygame.K_e and self.nearby_door is not None:
+                self.manager.change_scene(self.nearby_door)
+
+        elif event.type == pygame.KEYUP:
+            if event.key in self.keys_held:
+                self.keys_held[event.key] = False
+
+    # ── Update ───────────────────────────────────────────────────
 
     def update(self, dt):
         self.dialogue.update(dt)
+        self._update_hud()
 
-        # Update HUD count
-        completed = len(self.manager.completed_scenes & {"caesar", "base64", "hash", "diffie_hellman"})
-        self.hud.set_info(
-            scene_name="SEDE PRINCIPAL",
-            layer_text=f"SALAS: {completed}/4"
-        )
+        if self.dialogue.active:
+            return
+
+        # --- Player movement ---
+        dx, dy = 0.0, 0.0
+        if self.keys_held[pygame.K_w]:
+            dy -= PLAYER_SPEED * dt
+        if self.keys_held[pygame.K_s]:
+            dy += PLAYER_SPEED * dt
+        if self.keys_held[pygame.K_a]:
+            dx -= PLAYER_SPEED * dt
+        if self.keys_held[pygame.K_d]:
+            dx += PLAYER_SPEED * dt
+
+        # Update direction
+        if dy < 0:
+            self.direction = "up"
+        elif dy > 0:
+            self.direction = "down"
+        if dx < 0:
+            self.direction = "left"
+        elif dx > 0:
+            self.direction = "right"
+
+        # Apply movement with collision per axis
+        player_rect = pygame.Rect(self.px, self.py, PLAYER_SIZE, PLAYER_SIZE)
+
+        # X axis
+        if dx != 0:
+            new_rect = player_rect.move(dx, 0)
+            if not self._collides(new_rect):
+                self.px = new_rect.x
+                player_rect.x = new_rect.x
+
+        # Y axis
+        if dy != 0:
+            new_rect = player_rect.move(0, dy)
+            if not self._collides(new_rect):
+                self.py = new_rect.y
+                player_rect.y = new_rect.y
+
+        # Clamp to screen
+        self.px = max(8, min(WIDTH - PLAYER_SIZE - 8, self.px))
+        self.py = max(_WALL_H + 8, min(HEIGHT - PLAYER_SIZE - 8, self.py))
+
+        # --- Check nearby doors ---
+        self.nearby_door = None
+        pcx = self.px + PLAYER_SIZE // 2
+        pcy = self.py + PLAYER_SIZE // 2
+
+        for d in _DOORS:
+            dcx = d["x"] + _DOOR_W // 2
+            dcy = d["y"] + _DOOR_H // 2
+            dist = ((pcx - dcx) ** 2 + (pcy - dcy) ** 2) ** 0.5
+            if dist < _INTERACT_DIST:
+                self.nearby_door = d["key"]
+                break
+
+        # Check exit door
+        if self.nearby_door is None and self.manager.all_puzzles_complete():
+            dcx = _EXIT_DOOR["x"] + _DOOR_W // 2
+            dcy = _EXIT_DOOR["y"] + _DOOR_H // 2
+            dist = ((pcx - dcx) ** 2 + (pcy - dcy) ** 2) ** 0.5
+            if dist < _INTERACT_DIST:
+                self.nearby_door = "ending"
+
+    def _collides(self, rect):
+        """Check if rect overlaps any collision object."""
+        for cr in self.collision_rects:
+            if rect.colliderect(cr):
+                return True
+        return False
+
+    # ── Draw ─────────────────────────────────────────────────────
 
     def draw(self, surface):
-        # Floor background
+        # Floor
         surface.blit(self.floor_surf, (0, 0))
 
-        # Decorative sprites
-        for img, x, y in self.decor_sprites:
-            faded = img.copy()
-            faded.set_alpha(50)
-            surface.blit(faded, (x, y))
+        # Wall
+        draw_wall(surface, _WALL_Y, _WALL_H)
 
-        # Draw puzzle doors
-        for key, rect in self.door_rects.items():
-            self._draw_door(surface, key, rect)
+        # Furniture
+        self._draw_furniture(surface)
 
-        # Draw exit door if all puzzles complete
+        # Doors
+        self._draw_doors(surface)
+
+        # Exit door (only when all puzzles complete)
         if self.manager.all_puzzles_complete():
             self._draw_exit_door(surface)
+
+        # Player
+        draw_player(surface, int(self.px), int(self.py), self.direction)
+
+        # Interaction prompt
+        if self.nearby_door is not None:
+            if self.nearby_door == "ending":
+                px = _EXIT_DOOR["x"] + _DOOR_W // 2
+                py = _EXIT_DOOR["y"] - 6
+            else:
+                for d in _DOORS:
+                    if d["key"] == self.nearby_door:
+                        px = d["x"] + _DOOR_W // 2
+                        py = d["y"] - 6
+                        break
+            draw_interact_prompt(surface, px, py, "E")
 
         # HUD
         self.hud.draw(surface)
@@ -147,100 +311,35 @@ class HubScene:
         # Dialogue on top
         self.dialogue.draw(surface)
 
-    def _draw_door(self, surface, key, rect):
-        """Draw a single puzzle door."""
-        info = PUZZLE_SCENES[key]
-        is_completed = key in self.manager.completed_scenes
-        is_hovered = (self.hovered_door == key)
-        color = info["color"]
+    def _draw_furniture(self, surface):
+        """Draw all furniture items using draw_assets functions."""
+        for rect, tag in self.furniture:
+            if tag.startswith("desk"):
+                draw_desk(surface, rect.x, rect.y, rect.w, rect.h - 12)
+            elif tag.startswith("monitor"):
+                draw_monitor(surface, rect.x, rect.y)
+            elif tag.startswith("chair"):
+                draw_chair(surface, rect.x, rect.y)
+            elif tag.startswith("cabinet"):
+                draw_filing_cabinet(surface, rect.x, rect.y)
+            elif tag.startswith("plant"):
+                draw_plant(surface, rect.x, rect.y)
+            elif tag.startswith("server"):
+                draw_server_rack(surface, rect.x, rect.y, rect.h)
+            elif tag.startswith("wb"):
+                draw_whiteboard(surface, rect.x, rect.y, rect.w, rect.h)
 
-        # Panel background
-        panel = pygame.Surface((rect.w, rect.h), pygame.SRCALPHA)
-        panel.fill((C_PANEL[0], C_PANEL[1], C_PANEL[2], 210))
-
-        # Border - brighter on hover
-        if is_hovered:
-            border_color = tuple(min(c + 60, 255) for c in color)
-            border_width = 3
-        else:
-            border_color = color
-            border_width = 2
-        pygame.draw.rect(panel, (*border_color, 220), panel.get_rect(), border_width)
-
-        # Top accent line
-        pygame.draw.line(panel, (*color, 180), (0, 0), (rect.w, 0), 3)
-
-        surface.blit(panel, rect.topleft)
-
-        # Icon number in top-left of door
-        icon_text = self.font_icon.render(info["icon"], True, color)
-        surface.blit(icon_text, (rect.x + 16, rect.y + 14))
-
-        # Room name
-        name_surf = self.font_name.render(info["name"], True, C_TEXT_PRI)
-        surface.blit(name_surf, (rect.x + 60, rect.y + 20))
-
-        # Subtitle
-        sub_surf = self.font_sub.render(info["subtitle"], True, C_TEXT_SEC)
-        surface.blit(sub_surf, (rect.x + 60, rect.y + 48))
-
-        # Divider line
-        div_y = rect.y + 76
-        pygame.draw.line(surface, (*C_BORDER, 120), (rect.x + 16, div_y),
-                         (rect.x + rect.w - 16, div_y), 1)
-
-        # Status and icon
-        if is_completed:
-            status_text = "COMPLETADA"
-            status_color = C_GREEN
-            # Checkmark drawn with lines
-            cx = rect.x + 30
-            cy = rect.y + 110
-            pygame.draw.line(surface, C_GREEN, (cx, cy), (cx + 8, cy + 8), 3)
-            pygame.draw.line(surface, C_GREEN, (cx + 8, cy + 8), (cx + 20, cy - 6), 3)
-        else:
-            status_text = "DISPONIBLE"
-            status_color = C_ACCENT
-            # Lock icon drawn with rect + arc
-            lx = rect.x + 26
-            ly = rect.y + 100
-            # Lock body
-            pygame.draw.rect(surface, C_ACCENT, (lx, ly + 8, 16, 12), 2)
-            # Lock shackle
-            pygame.draw.arc(surface, C_ACCENT, (lx + 2, ly, 12, 14), 0, 3.14, 2)
-
-        status_surf = self.font_status.render(status_text, True, status_color)
-        surface.blit(status_surf, (rect.x + 56, rect.y + 104))
-
-        # Hover hint
-        if is_hovered and not is_completed:
-            hint = self.font_sub.render("[CLICK para entrar]", True, C_TEXT_HINT)
-            surface.blit(hint, (rect.x + rect.w - hint.get_width() - 16, rect.y + rect.h - 30))
-        elif is_hovered and is_completed:
-            hint = self.font_sub.render("[Repetir sala]", True, C_TEXT_HINT)
-            surface.blit(hint, (rect.x + rect.w - hint.get_width() - 16, rect.y + rect.h - 30))
+    def _draw_doors(self, surface):
+        """Draw the 4 puzzle doors."""
+        completed = self.manager.completed_scenes
+        for d in _DOORS:
+            is_done = d["key"] in completed
+            draw_door(surface, d["x"], d["y"],
+                      color=d["color"], label=d["label"],
+                      locked=False, completed=is_done)
 
     def _draw_exit_door(self, surface):
-        """Draw the EXIT door when all puzzles are complete."""
-        rect = self.exit_rect
-        is_hovered = (self.hovered_door == "__exit__")
-
-        panel = pygame.Surface((rect.w, rect.h), pygame.SRCALPHA)
-        panel.fill((C_PANEL[0], C_PANEL[1], C_PANEL[2], 220))
-
-        border_color = C_GREEN if not is_hovered else (120, 200, 130)
-        border_w = 3 if is_hovered else 2
-        pygame.draw.rect(panel, border_color, panel.get_rect(), border_w)
-        pygame.draw.line(panel, C_GREEN, (0, 0), (rect.w, 0), 3)
-
-        surface.blit(panel, rect.topleft)
-
-        # EXIT label
-        exit_label = self.font_name.render("SALIDA  >>  INFORME FINAL", True, C_GREEN)
-        lx = rect.centerx - exit_label.get_width() // 2
-        ly = rect.centery - exit_label.get_height() // 2
-        surface.blit(exit_label, (lx, ly))
-
-        if is_hovered:
-            hint = self.font_sub.render("[CLICK para finalizar]", True, C_TEXT_HINT)
-            surface.blit(hint, (rect.right - hint.get_width() - 12, rect.bottom - 22))
+        """Draw the exit door at center-top."""
+        draw_door(surface, _EXIT_DOOR["x"], _EXIT_DOOR["y"],
+                  color=C_GREEN, label=_EXIT_DOOR["label"],
+                  locked=False, completed=True)

@@ -24,13 +24,43 @@ C_HASH       = (154, 74, 58)
 C_DH         = (154, 138, 58)
 C_WHITE      = (220, 225, 235)
 C_PANEL      = (16, 18, 28)
+C_NEON       = (57, 255, 20)     # Verde neon #39FF14 para legibilidad
+C_TERM_BG    = (5, 5, 8)         # Fondo terminal
+C_TERM_GREEN = (0, 200, 0)       # Texto terminal
 
-# Spritesheet
-SPRITE_PATH  = os.path.join(BASE_DIR, "assets", "spritesheet.png")
-TILES_PATH   = os.path.join(BASE_DIR, "assets", "tiles.png")
-TILE_SIZE    = 16
+# Difficulty levels
+DIFFICULTY_DUMMY  = 0   # Ayudas visuales constantes
+DIFFICULTY_MID    = 1   # Pistas normales
+DIFFICULTY_SENIOR = 2   # Pocas pistas
+DIFFICULTY_NOOB   = 3   # Sin pistas, logica pura
 
-# Scenes order for linear fallback
+DIFFICULTY_NAMES = {
+    DIFFICULTY_DUMMY: "DUMMY",
+    DIFFICULTY_MID: "MID",
+    DIFFICULTY_SENIOR: "SENIOR",
+    DIFFICULTY_NOOB: "YOU ARE NOT NOOB",
+}
+
+DIFFICULTY_DESC = {
+    DIFFICULTY_DUMMY: "Ayudas visuales constantes, guia paso a paso",
+    DIFFICULTY_MID: "Pistas disponibles, interfaz con ayudas",
+    DIFFICULTY_SENIOR: "Pocas pistas, sin ayudas visuales extra",
+    DIFFICULTY_NOOB: "Sin pistas. Logica pura. Buena suerte.",
+}
+
+# Free hints per difficulty (hint 0 is always free)
+HINTS_CONFIG = {
+    DIFFICULTY_DUMMY: {"free_hints": 3, "visual_aids": True},
+    DIFFICULTY_MID: {"free_hints": 1, "visual_aids": False},
+    DIFFICULTY_SENIOR: {"free_hints": 1, "visual_aids": False},
+    DIFFICULTY_NOOB: {"free_hints": 0, "visual_aids": False},
+}
+
+# Player movement
+PLAYER_SPEED = 180  # px/s
+PLAYER_SIZE  = 28   # px (character square)
+
+# Scenes order
 SCENE_ORDER = ["intro", "hub", "caesar", "base64", "hash", "diffie_hellman", "ending"]
 
 # Puzzle scenes (for hub)

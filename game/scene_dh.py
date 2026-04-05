@@ -1,32 +1,56 @@
 import pygame
 import math
+import colorsys
 from game.constants import (WIDTH, HEIGHT, C_BG, C_BG2, C_BG3, C_BORDER, C_TEXT_PRI,
-    C_TEXT_SEC, C_TEXT_HINT, C_ACCENT, C_GREEN, C_RED, C_DH, C_PANEL, C_WHITE, C_AMBER)
+    C_TEXT_SEC, C_TEXT_HINT, C_ACCENT, C_GREEN, C_RED, C_NEON, C_WHITE, C_PANEL,
+    C_DH, C_AMBER, C_CAESAR, C_BASE64, C_HASH, HINTS_CONFIG)
+from game.ui.draw_assets import (draw_office_floor, draw_wall, draw_text_box, word_wrap,
+    draw_desk, draw_monitor, draw_server_rack)
 from game.ui.dialogue import DialogueBox
 from game.ui.hud import HUD
-from game.ui.tile_renderer import get_separate_sprite, draw_floor
 from crypto.dh_utils import dh_public, dh_shared_key
 
 
-# DH parameters
+# DH parameters (small primes for simplicity)
 _G = 5
 _P = 23
 _B_SECRET = 15
 _B_PUBLIC = dh_public(_G, _P, _B_SECRET)
 
 # Layout constants
-_COL_LEFT_X = 40
+_COL_LEFT_X = 30
 _COL_CENTER_X = 440
-_COL_RIGHT_X = 860
-_COL_W = 380
-_COL_TOP = 80
-_SLIDER_Y = 260
+_COL_RIGHT_X = 870
+_COL_W = 390
+_COL_TOP = 70
+_SLIDER_Y = 230
 _SLIDER_W = 300
 _SLIDER_H = 12
 _HANDLE_W = 18
 _HANDLE_H = 28
 _BUTTON_W = 280
 _BUTTON_H = 48
+_COLOR_SQ = 50  # color square size
+
+
+def _number_to_color(n, p):
+    """Map a number in range [0, p) to an HSV color, return RGB tuple."""
+    hue = (n / p)
+    r, g, b = colorsys.hsv_to_rgb(hue, 0.85, 0.95)
+    return (int(r * 255), int(g * 255), int(b * 255))
+
+
+def _blend_colors(c1, c2, ratio=0.5):
+    """Blend two RGB colors together."""
+    return (
+        int(c1[0] * ratio + c2[0] * (1 - ratio)),
+        int(c1[1] * ratio + c2[1] * (1 - ratio)),
+        int(c1[2] * ratio + c2[2] * (1 - ratio)),
+    )
+
+
+# Base color (yellow-ish, represents g)
+_BASE_COLOR = (230, 210, 50)
 
 
 class DHScene:
@@ -42,6 +66,7 @@ class DHScene:
         self.font_edu = pygame.font.SysFont("monospace", 12)
         self.font_btn = pygame.font.SysFont("monospace", 16, bold=True)
         self.font_big = pygame.font.SysFont("monospace", 22, bold=True)
+        self.font_channel = pygame.font.SysFont("monospace", 11)
 
         # State
         self.secret_a = 7
@@ -62,7 +87,6 @@ class DHScene:
 
         # Success animation
         self.success_timer = 0.0
-        self.debriefing_shown = False
 
         # Slider rect
         self.slider_x = _COL_LEFT_X + (_COL_W - _SLIDER_W) // 2
@@ -72,7 +96,7 @@ class DHScene:
 
         # Confirm button
         self.btn_rect = pygame.Rect(
-            WIDTH // 2 - _BUTTON_W // 2, 620,
+            WIDTH // 2 - _BUTTON_W // 2, 640,
             _BUTTON_W, _BUTTON_H
         )
         self.btn_hovered = False
@@ -84,13 +108,6 @@ class DHScene:
         # Hint button
         self.hint_rect = pygame.Rect(WIDTH - 160, HEIGHT - 44, 140, 32)
         self.hint_hovered = False
-
-        # Pre-render floor
-        self.floor_surf = pygame.Surface((WIDTH, HEIGHT))
-        draw_floor(self.floor_surf, tile_col=0, tile_row=0)
-        dark = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        dark.fill((0, 0, 0, 180))
-        self.floor_surf.blit(dark, (0, 0))
 
         # HUD
         self.hud = HUD()
@@ -104,18 +121,6 @@ class DHScene:
         enter_msgs = manager.dialogues.get("diffie_hellman", {}).get("enter", [])
         if enter_msgs:
             self.dialogue.show(enter_msgs)
-
-        # Load optional decoration
-        self.decor_sprites = []
-        for name, scale, x, y in [
-            ("Sprite-0005.png", 2, 80, 500),
-            ("Sprite-0022.png", 2, 1080, 500),
-        ]:
-            try:
-                img = get_separate_sprite(name, scale=scale)
-                self.decor_sprites.append((img, x, y))
-            except Exception:
-                pass
 
     # ------------------------------------------------------------------
     # Computed DH values
@@ -132,6 +137,34 @@ class DHScene:
     @property
     def shared_key_real(self):
         return dh_shared_key(self.a_public, _P, _B_SECRET)
+
+    # ------------------------------------------------------------------
+    # Color helpers
+    # ------------------------------------------------------------------
+
+    @property
+    def secret_color_a(self):
+        return _number_to_color(self.secret_a, _P)
+
+    @property
+    def mixed_color_a(self):
+        return _number_to_color(self.a_public, _P)
+
+    @property
+    def secret_color_b(self):
+        return _number_to_color(_B_SECRET, _P)
+
+    @property
+    def mixed_color_b(self):
+        return _number_to_color(_B_PUBLIC, _P)
+
+    @property
+    def final_color_player(self):
+        return _number_to_color(self.shared_key_player, _P)
+
+    @property
+    def final_color_real(self):
+        return _number_to_color(self.shared_key_real, _P)
 
     # ------------------------------------------------------------------
     # Slider helpers
@@ -201,7 +234,6 @@ class DHScene:
             if msgs:
                 self.dialogue.show(msgs)
         else:
-            # Should not happen with correct DH math, but safety fallback
             msgs = self.manager.dialogues.get("diffie_hellman", {}).get("error", [])
             if msgs:
                 self.dialogue.show(msgs)
@@ -209,14 +241,17 @@ class DHScene:
     def _show_hint(self):
         self.hints_used += 1
         hint_msgs = [
-            {"speaker": "CONTROL", "text": "Cualquier valor de 'a' funciona. DH siempre produce la misma clave compartida."},
-            {"speaker": "CONTROL", "text": "Lo importante: ni 'a' ni 'b' viajan por el canal. Solo A y B publicos."},
+            {"speaker": "CONTROL",
+             "text": "Cualquier valor de 'a' funciona. DH siempre produce la misma clave compartida."},
+            {"speaker": "CONTROL",
+             "text": "Piensa en los colores: mezclas TU secreto con la base, el otro hace lo mismo. "
+                     "Al final ambos llegan al MISMO color."},
         ]
         self.dialogue.show(hint_msgs)
 
     def _calculate_score(self):
         base = 100
-        penalty = self.hints_used * 15
+        penalty = max(0, self.hints_used - 1) * 15  # hint 0 is free
         time_penalty = max(0, int(self.elapsed - 30) // 10) * 5
         return max(10, base - penalty - time_penalty)
 
@@ -230,7 +265,6 @@ class DHScene:
         if self.phase == "interact":
             self.elapsed += dt
 
-        # Animation timers
         self.transmit_blink += dt
         self.pulse_timer += dt
 
@@ -250,13 +284,8 @@ class DHScene:
     # ------------------------------------------------------------------
 
     def draw(self, surface):
-        surface.blit(self.floor_surf, (0, 0))
-
-        # Decorative sprites
-        for img, x, y in self.decor_sprites:
-            faded = img.copy()
-            faded.set_alpha(25)
-            surface.blit(faded, (x, y))
+        # Solid black background for legibility
+        surface.fill((0, 0, 0))
 
         # Three columns
         self._draw_column_left(surface)
@@ -266,13 +295,13 @@ class DHScene:
         # Arrows between columns
         self._draw_arrows(surface)
 
-        # Educational sidebar
-        self._draw_sidebar(surface)
+        # Bottom: final key display
+        self._draw_final_key(surface)
 
         # Confirm button
         if self.phase == "interact":
             self._draw_button(surface, self.btn_rect, "CONFIRMAR CLAVE",
-                              self.btn_hovered, C_DH)
+                              self.btn_hovered, C_NEON)
 
         # Bottom bar buttons
         self._draw_button(surface, self.back_rect, "< VOLVER",
@@ -295,7 +324,34 @@ class DHScene:
         self.dialogue.draw(surface)
 
     # ------------------------------------------------------------------
-    # Column renderers
+    # Color square drawing helper
+    # ------------------------------------------------------------------
+
+    def _draw_color_square(self, surface, x, y, color, size=_COLOR_SQ, label=None):
+        """Draw a colored square with optional label below."""
+        pygame.draw.rect(surface, color, (x, y, size, size))
+        pygame.draw.rect(surface, C_WHITE, (x, y, size, size), 1)
+        if label:
+            lbl = self.font_edu.render(label, True, C_TEXT_SEC)
+            surface.blit(lbl, (x + size // 2 - lbl.get_width() // 2, y + size + 3))
+
+    def _draw_mix_equation(self, surface, x, y, c1, c2, c_result, size=36):
+        """Draw: [c1] + [c2] = [c_result] as color squares."""
+        sq = size
+        gap = 6
+        self._draw_color_square(surface, x, y, c1, sq)
+        plus = self.font_label.render("+", True, C_WHITE)
+        surface.blit(plus, (x + sq + gap, y + sq // 2 - plus.get_height() // 2))
+        x2 = x + sq + gap + plus.get_width() + gap
+        self._draw_color_square(surface, x2, y, c2, sq)
+        eq = self.font_label.render("=", True, C_WHITE)
+        x3 = x2 + sq + gap
+        surface.blit(eq, (x3, y + sq // 2 - eq.get_height() // 2))
+        x4 = x3 + eq.get_width() + gap
+        self._draw_color_square(surface, x4, y, c_result, sq)
+
+    # ------------------------------------------------------------------
+    # Column panel helper
     # ------------------------------------------------------------------
 
     def _draw_column_panel(self, surface, x, y, w, h, title, color):
@@ -306,20 +362,34 @@ class DHScene:
         surface.blit(panel, (x, y))
 
         title_surf = self.font_title.render(title, True, color)
-        surface.blit(title_surf, (x + w // 2 - title_surf.get_width() // 2, y + 10))
+        surface.blit(title_surf, (x + w // 2 - title_surf.get_width() // 2, y + 8))
+
+    # ------------------------------------------------------------------
+    # LEFT COLUMN: Agent A (player)
+    # ------------------------------------------------------------------
 
     def _draw_column_left(self, surface):
-        x, y, w, h = _COL_LEFT_X, _COL_TOP, _COL_W, 230
-        self._draw_column_panel(surface, x, y, w, h, "AGENTE A -- TU", C_GREEN)
+        x, y, w, h = _COL_LEFT_X, _COL_TOP, _COL_W, 320
+        self._draw_column_panel(surface, x, y, w, h, "AGENTE A -- TU", C_NEON)
 
-        # Secret slider
+        # Secret color display
+        cy = y + 34
+        lbl = self.font_label.render("Tu color secreto:", True, C_TEXT_SEC)
+        surface.blit(lbl, (x + 16, cy))
+        self._draw_color_square(surface, x + 200, cy - 4, self.secret_color_a, 40)
+
+        # Slider for secret number
         label = self.font_label.render("Secreto a:", True, C_TEXT_SEC)
-        surface.blit(label, (x + 20, _SLIDER_Y - 30))
+        surface.blit(label, (x + 16, _SLIDER_Y - 28))
 
         # Slider track
-        track_color = C_BORDER
-        pygame.draw.rect(surface, track_color,
+        pygame.draw.rect(surface, C_BORDER,
                          (self.slider_x, _SLIDER_Y, _SLIDER_W, _SLIDER_H), 0, 4)
+        # Filled portion
+        fill_w = self.handle_rect.centerx - self.slider_x
+        if fill_w > 0:
+            pygame.draw.rect(surface, C_NEON,
+                             (self.slider_x, _SLIDER_Y, fill_w, _SLIDER_H), 0, 4)
 
         # Tick marks
         for i in range(20):
@@ -334,181 +404,262 @@ class DHScene:
                                    _SLIDER_Y + _SLIDER_H + 10))
 
         # Handle
-        handle_color = C_DH if self.dragging_slider else C_ACCENT
+        handle_color = C_NEON if self.dragging_slider else C_ACCENT
         pygame.draw.rect(surface, handle_color, self.handle_rect, 0, 3)
         pygame.draw.rect(surface, C_WHITE, self.handle_rect, 1, 3)
 
-        # Current value display
-        val_surf = self.font_value.render(str(self.secret_a), True, C_DH)
-        surface.blit(val_surf, (
-            self.slider_x + _SLIDER_W + 16,
-            _SLIDER_Y - 10
-        ))
+        # Current value
+        val_surf = self.font_value.render(str(self.secret_a), True, C_NEON)
+        surface.blit(val_surf, (self.slider_x + _SLIDER_W + 16, _SLIDER_Y - 10))
 
-        # Calculated A
-        cy = _SLIDER_Y + 50
+        # Color mixing visualization: base + secret = mixed
+        mix_y = _SLIDER_Y + 48
+        mix_lbl = self.font_edu.render("Mezcla:", True, C_TEXT_SEC)
+        surface.blit(mix_lbl, (x + 16, mix_y))
+        self._draw_mix_equation(surface, x + 16, mix_y + 16,
+                                _BASE_COLOR, self.secret_color_a,
+                                self.mixed_color_a, 30)
+
+        # Math formula
+        cy2 = mix_y + 58
         a_label = self.font_math.render(
-            f"A = g^a mod p = {_G}^{self.secret_a} mod {_P}", True, C_TEXT_SEC)
-        surface.blit(a_label, (x + 20, cy))
-        a_val = self.font_big.render(f"A = {self.a_public}", True, C_GREEN)
-        surface.blit(a_val, (x + 20, cy + 22))
+            f"A = {_G}^{self.secret_a} mod {_P}", True, C_TEXT_SEC)
+        surface.blit(a_label, (x + 16, cy2))
+        a_val = self.font_big.render(f"A = {self.a_public}", True, C_NEON)
+        surface.blit(a_val, (x + 16, cy2 + 20))
 
-        # Shared key
-        cy2 = cy + 56
-        k_label = self.font_math.render(
-            f"K = B^a mod p = {_B_PUBLIC}^{self.secret_a} mod {_P}", True, C_TEXT_SEC)
-        surface.blit(k_label, (x + 20, cy2))
-        k_val = self.font_big.render(f"K = {self.shared_key_player}", True, C_AMBER)
-        surface.blit(k_val, (x + 20, cy2 + 22))
+    # ------------------------------------------------------------------
+    # CENTER COLUMN: Public channel
+    # ------------------------------------------------------------------
 
     def _draw_column_center(self, surface):
-        x, y, w, h = _COL_CENTER_X, _COL_TOP, _COL_W, 230
+        x, y, w, h = _COL_CENTER_X, _COL_TOP, _COL_W, 320
         self._draw_column_panel(surface, x, y, w, h, "CANAL PUBLICO", C_ACCENT)
 
-        # Parameters
-        cy = y + 40
+        # Public parameters
+        cy = y + 34
+        base_lbl = self.font_label.render("Color base (publico):", True, C_TEXT_PRI)
+        surface.blit(base_lbl, (x + 16, cy))
+        self._draw_color_square(surface, x + 240, cy - 4, _BASE_COLOR, 36)
+
+        cy += 28
         g_text = self.font_label.render(f"g = {_G}  (base)", True, C_TEXT_PRI)
         surface.blit(g_text, (x + w // 2 - g_text.get_width() // 2, cy))
         p_text = self.font_label.render(f"p = {_P}  (primo)", True, C_TEXT_PRI)
-        surface.blit(p_text, (x + w // 2 - p_text.get_width() // 2, cy + 24))
+        surface.blit(p_text, (x + w // 2 - p_text.get_width() // 2, cy + 20))
 
         # Divider
-        div_y = cy + 60
-        pygame.draw.line(surface, C_BORDER, (x + 20, div_y), (x + w - 20, div_y), 1)
+        div_y = cy + 50
+        pygame.draw.line(surface, C_BORDER, (x + 16, div_y), (x + w - 16, div_y), 1)
 
-        # Public values
-        pub_y = div_y + 14
-        a_pub = self.font_math.render(f"A (publico) = {self.a_public}", True, C_GREEN)
-        surface.blit(a_pub, (x + w // 2 - a_pub.get_width() // 2, pub_y))
+        # Public values with color squares
+        pub_y = div_y + 12
+        a_pub = self.font_math.render(f"A (publico) = {self.a_public}", True, C_NEON)
+        surface.blit(a_pub, (x + 16, pub_y))
+        self._draw_color_square(surface, x + w - 60, pub_y - 2, self.mixed_color_a, 24)
 
         b_pub = self.font_math.render(f"B (publico) = {_B_PUBLIC}", True, C_RED)
-        surface.blit(b_pub, (x + w // 2 - b_pub.get_width() // 2, pub_y + 28))
+        surface.blit(b_pub, (x + 16, pub_y + 30))
+        self._draw_color_square(surface, x + w - 60, pub_y + 28, self.mixed_color_b, 24)
 
         # Warning text
-        warn_y = pub_y + 68
-        warn = self.font_edu.render("Visible para cualquier interceptor", True, C_TEXT_HINT)
-        surface.blit(warn, (x + w // 2 - warn.get_width() // 2, warn_y))
+        warn_y = pub_y + 70
+        lines = [
+            "Los colores mezclados viajan",
+            "por el canal publico.",
+            "Pero nadie puede separar",
+            "los colores originales.",
+        ]
+        for i, line in enumerate(lines):
+            warn = self.font_channel.render(line, True, C_TEXT_HINT)
+            surface.blit(warn, (x + w // 2 - warn.get_width() // 2, warn_y + i * 15))
+
+    # ------------------------------------------------------------------
+    # RIGHT COLUMN: Agent B (suspect)
+    # ------------------------------------------------------------------
 
     def _draw_column_right(self, surface):
-        x, y, w, h = _COL_RIGHT_X, _COL_TOP, _COL_W, 230
+        x, y, w, h = _COL_RIGHT_X, _COL_TOP, _COL_W, 320
         self._draw_column_panel(surface, x, y, w, h, "AGENTE B -- SOSPECHOSO", C_RED)
 
-        cy = y + 44
+        cy = y + 34
         # Secret hidden
-        sec = self.font_label.render("Secreto: ???", True, C_RED)
-        surface.blit(sec, (x + 20, cy))
+        sec_lbl = self.font_label.render("Color secreto: ???", True, C_RED)
+        surface.blit(sec_lbl, (x + 16, cy))
+        # Draw a mystery square with question marks
+        qx = x + 230
+        pygame.draw.rect(surface, C_PANEL, (qx, cy - 4, 40, 40))
+        pygame.draw.rect(surface, C_RED, (qx, cy - 4, 40, 40), 2)
+        q = self.font_label.render("?", True, C_RED)
+        surface.blit(q, (qx + 15, cy + 6))
 
-        # B public
-        cy2 = cy + 36
+        # Color mixing (hidden secret)
+        mix_y = cy + 48
+        mix_lbl = self.font_edu.render("Mezcla:", True, C_TEXT_SEC)
+        surface.blit(mix_lbl, (x + 16, mix_y))
+        # Show: base + ??? = mixed_b
+        sq = 30
+        gap = 6
+        mx = x + 16
+        self._draw_color_square(surface, mx, mix_y + 16, _BASE_COLOR, sq)
+        plus = self.font_label.render("+", True, C_WHITE)
+        surface.blit(plus, (mx + sq + gap, mix_y + 16 + sq // 2 - plus.get_height() // 2))
+        mx2 = mx + sq + gap + plus.get_width() + gap
+        # Hidden square
+        pygame.draw.rect(surface, C_PANEL, (mx2, mix_y + 16, sq, sq))
+        pygame.draw.rect(surface, C_RED, (mx2, mix_y + 16, sq, sq), 2)
+        q2 = self.font_edu.render("?", True, C_RED)
+        surface.blit(q2, (mx2 + sq // 2 - q2.get_width() // 2,
+                          mix_y + 16 + sq // 2 - q2.get_height() // 2))
+        eq = self.font_label.render("=", True, C_WHITE)
+        mx3 = mx2 + sq + gap
+        surface.blit(eq, (mx3, mix_y + 16 + sq // 2 - eq.get_height() // 2))
+        mx4 = mx3 + eq.get_width() + gap
+        self._draw_color_square(surface, mx4, mix_y + 16, self.mixed_color_b, sq)
+
+        # Math
+        cy2 = mix_y + 60
         b_label = self.font_math.render(
-            f"B = g^b mod p = {_G}^? mod {_P}", True, C_TEXT_SEC)
-        surface.blit(b_label, (x + 20, cy2))
+            f"B = {_G}^? mod {_P}", True, C_TEXT_SEC)
+        surface.blit(b_label, (x + 16, cy2))
         b_val = self.font_big.render(f"B = {_B_PUBLIC}", True, C_RED)
-        surface.blit(b_val, (x + 20, cy2 + 22))
+        surface.blit(b_val, (x + 16, cy2 + 20))
 
         # Shared key hidden
-        cy3 = cy2 + 58
+        cy3 = cy2 + 52
         k_label = self.font_math.render("K = A^b mod p = ???", True, C_TEXT_SEC)
-        surface.blit(k_label, (x + 20, cy3))
+        surface.blit(k_label, (x + 16, cy3))
 
         if self.phase == "success":
             k_val = self.font_big.render(f"K = {self.shared_key_real}", True, C_AMBER)
         else:
             k_val = self.font_big.render("K = ???", True, C_TEXT_HINT)
-        surface.blit(k_val, (x + 20, cy3 + 22))
+        surface.blit(k_val, (x + 16, cy3 + 20))
 
     # ------------------------------------------------------------------
-    # Arrows
+    # Final key display at bottom
+    # ------------------------------------------------------------------
+
+    def _draw_final_key(self, surface):
+        bx = 30
+        by = 420
+        bw = WIDTH - 60
+        bh = 190
+        panel = pygame.Surface((bw, bh), pygame.SRCALPHA)
+        panel.fill((C_PANEL[0], C_PANEL[1], C_PANEL[2], 200))
+        pygame.draw.rect(panel, (*C_DH, 120), panel.get_rect(), 1)
+        surface.blit(panel, (bx, by))
+
+        # Title
+        title = self.font_label.render(
+            "TU CLAVE FINAL: mix(B_publico, tu_secreto) = K", True, C_NEON)
+        surface.blit(title, (bx + 20, by + 12))
+
+        # Show the color mixing: mixed_b + secret_a = final_color
+        cy = by + 38
+        lbl = self.font_edu.render("Color B publico + Tu secreto = Clave compartida:",
+                                   True, C_TEXT_SEC)
+        surface.blit(lbl, (bx + 20, cy))
+        self._draw_mix_equation(surface, bx + 20, cy + 18,
+                                self.mixed_color_b, self.secret_color_a,
+                                self.final_color_player, 40)
+
+        # Math
+        k_math = self.font_math.render(
+            f"K = B^a mod p = {_B_PUBLIC}^{self.secret_a} mod {_P} = "
+            f"{self.shared_key_player}", True, C_AMBER)
+        surface.blit(k_math, (bx + 20, cy + 68))
+
+        # Show final color square large
+        fsx = bx + bw - 180
+        fsy = cy + 10
+        self._draw_color_square(surface, fsx, fsy, self.final_color_player, 60,
+                                label=f"K = {self.shared_key_player}")
+
+        # Educational sidebar within this panel
+        edu_x = bx + 400
+        edu_y = by + 12
+        edu_lines = [
+            ("DIFFIE-HELLMAN (Metafora de color)", C_DH, True),
+            ("", None, False),
+            ("Cada agente mezcla su color secreto", C_TEXT_SEC, False),
+            ("con la base publica (amarilla).", C_TEXT_SEC, False),
+            ("Los colores mezclados viajan publicos.", C_TEXT_SEC, False),
+            ("Al mezclar el color ajeno con tu secreto,", C_TEXT_SEC, False),
+            ("ambos obtienen el MISMO color final.", C_NEON, False),
+            ("", None, False),
+            ("Nadie en el canal puede calcular K", C_TEXT_HINT, False),
+            ("sin conocer a o b.", C_TEXT_HINT, False),
+        ]
+        for text, color, bold in edu_lines:
+            if not text:
+                edu_y += 5
+                continue
+            font = self.font_label if bold else self.font_edu
+            txt = font.render(text, True, color)
+            surface.blit(txt, (edu_x, edu_y))
+            edu_y += txt.get_height() + 2
+
+    # ------------------------------------------------------------------
+    # Arrows between columns
     # ------------------------------------------------------------------
 
     def _draw_arrows(self, surface):
-        mid_y_top = _COL_TOP + 130
-        mid_y_bot = _COL_TOP + 170
+        mid_y_top = _COL_TOP + 180
+        mid_y_bot = _COL_TOP + 210
         left_end = _COL_LEFT_X + _COL_W
         center_start = _COL_CENTER_X
         center_end = _COL_CENTER_X + _COL_W
         right_start = _COL_RIGHT_X
 
-        # Left -> Center arrow (sending A)
+        # Left -> Center (sending A, green / neon)
         if self.arrow_left_active:
             progress = min(1.0, self.arrow_left_timer / 1.0)
             ax = left_end + int(progress * (center_start - left_end))
-            color = C_GREEN
-            # Arrow line
-            pygame.draw.line(surface, color, (left_end + 4, mid_y_top), (ax, mid_y_top), 2)
-            # Arrowhead
-            pygame.draw.polygon(surface, color, [
+            # Animated colored blob
+            pygame.draw.line(surface, C_NEON, (left_end + 4, mid_y_top), (ax, mid_y_top), 2)
+            pygame.draw.polygon(surface, C_NEON, [
                 (ax, mid_y_top),
                 (ax - 8, mid_y_top - 5),
                 (ax - 8, mid_y_top + 5),
             ])
-            # Label
+            # Small color blob traveling
+            blob_x = left_end + int(progress * (center_start - left_end - 10))
+            pygame.draw.circle(surface, self.mixed_color_a,
+                               (blob_x, mid_y_top), 6)
+            pygame.draw.circle(surface, C_WHITE, (blob_x, mid_y_top), 6, 1)
             if progress < 0.8:
-                lbl = self.font_edu.render("enviando A...", True, C_GREEN)
+                lbl = self.font_edu.render("enviando A...", True, C_NEON)
                 surface.blit(lbl, (left_end + 8, mid_y_top - 18))
         else:
-            # Static completed arrow
-            pygame.draw.line(surface, (*C_GREEN, 80), (left_end + 4, mid_y_top),
+            pygame.draw.line(surface, C_NEON,
+                             (left_end + 4, mid_y_top),
                              (center_start - 4, mid_y_top), 1)
-            _draw_arrowhead(surface, center_start - 4, mid_y_top, C_GREEN)
+            _draw_arrowhead(surface, center_start - 4, mid_y_top, C_NEON)
 
-        # Center -> Left arrow (receiving B)
-        color_b = (*C_RED, 160) if not self.arrow_right_active else C_RED
+        # Center -> Left (receiving B, red)
         pygame.draw.line(surface, C_RED,
                          (center_start - 4, mid_y_bot),
                          (left_end + 4, mid_y_bot), 1)
         _draw_arrowhead_left(surface, left_end + 4, mid_y_bot, C_RED)
+        # Color blob for B
+        blob_bx = (center_start + left_end) // 2
+        pygame.draw.circle(surface, self.mixed_color_b, (blob_bx, mid_y_bot), 6)
+        pygame.draw.circle(surface, C_WHITE, (blob_bx, mid_y_bot), 6, 1)
         lbl_b = self.font_edu.render(f"B={_B_PUBLIC}", True, C_RED)
         surface.blit(lbl_b, (left_end + 8, mid_y_bot + 4))
 
-        # Right -> Center arrow (B published)
+        # Right -> Center (B published)
         pygame.draw.line(surface, C_RED,
                          (right_start - 4, mid_y_top),
                          (center_end + 4, mid_y_top), 1)
         _draw_arrowhead_left(surface, center_end + 4, mid_y_top, C_RED)
 
-        # Center -> Right arrow (A published)
-        pygame.draw.line(surface, C_GREEN,
+        # Center -> Right (A published)
+        pygame.draw.line(surface, C_NEON,
                          (center_end + 4, mid_y_bot),
                          (right_start - 4, mid_y_bot), 1)
-        _draw_arrowhead(surface, right_start - 4, mid_y_bot, C_GREEN)
-
-    # ------------------------------------------------------------------
-    # Educational sidebar
-    # ------------------------------------------------------------------
-
-    def _draw_sidebar(self, surface):
-        sx, sy = 440, 340
-        sw, sh = 380, 240
-        panel = pygame.Surface((sw, sh), pygame.SRCALPHA)
-        panel.fill((C_PANEL[0], C_PANEL[1], C_PANEL[2], 180))
-        pygame.draw.rect(panel, (*C_DH, 120), panel.get_rect(), 1)
-        surface.blit(panel, (sx, sy))
-
-        lines = [
-            ("DIFFIE-HELLMAN", C_DH, True),
-            ("", None, False),
-            ("g, p: parametros publicos", C_TEXT_SEC, False),
-            ("a, b: secretos privados", C_TEXT_SEC, False),
-            ("", None, False),
-            ("A = g^a mod p  (publico)", C_GREEN, False),
-            ("B = g^b mod p  (publico)", C_RED, False),
-            ("", None, False),
-            ("K = B^a = A^b  (compartida!)", C_AMBER, False),
-            ("", None, False),
-            ("Nadie en el canal puede", C_TEXT_HINT, False),
-            ("calcular K sin a o b", C_TEXT_HINT, False),
-        ]
-
-        cy = sy + 10
-        for text, color, bold in lines:
-            if not text:
-                cy += 6
-                continue
-            font = self.font_label if bold else self.font_edu
-            txt = font.render(text, True, color)
-            surface.blit(txt, (sx + 16, cy))
-            cy += txt.get_height() + 3
+        _draw_arrowhead(surface, right_start - 4, mid_y_bot, C_NEON)
 
     # ------------------------------------------------------------------
     # Transmit indicator
@@ -549,39 +700,47 @@ class DHScene:
     # ------------------------------------------------------------------
 
     def _draw_success_overlay(self, surface):
-        alpha = min(180, int((self.success_timer - 0.5) * 300))
+        alpha = min(200, int((self.success_timer - 0.5) * 300))
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, alpha))
         surface.blit(overlay, (0, 0))
 
         if self.success_timer > 1.0:
             # Green glow text
-            txt = self.font_value.render("CLAVE COMPARTIDA VERIFICADA", True, C_GREEN)
+            txt = self.font_value.render("CLAVE COMPARTIDA VERIFICADA", True, C_NEON)
             tx = WIDTH // 2 - txt.get_width() // 2
-            ty = HEIGHT // 2 - 60
-            # Glow
-            glow = self.font_value.render("CLAVE COMPARTIDA VERIFICADA", True, C_GREEN)
+            ty = HEIGHT // 2 - 100
+
+            glow = self.font_value.render("CLAVE COMPARTIDA VERIFICADA", True, C_NEON)
             glow.set_alpha(60)
             surface.blit(glow, (tx - 2, ty - 1))
             surface.blit(glow, (tx + 2, ty + 1))
             surface.blit(txt, (tx, ty))
 
-            # Show matching keys
+            # Matching keys
             key_text = self.font_big.render(
                 f"K(A) = {self.shared_key_player}  ==  K(B) = {self.shared_key_real}",
                 True, C_AMBER)
             surface.blit(key_text, (
-                WIDTH // 2 - key_text.get_width() // 2,
-                ty + 50
+                WIDTH // 2 - key_text.get_width() // 2, ty + 50
             ))
+
+            # Matching colors side by side
+            cx = WIDTH // 2 - 70
+            cy = ty + 90
+            self._draw_color_square(surface, cx, cy, self.final_color_player, 50,
+                                    label="Tu K")
+            eq_s = self.font_big.render("=", True, C_NEON)
+            surface.blit(eq_s, (cx + 58, cy + 14))
+            self._draw_color_square(surface, cx + 80, cy, self.final_color_real, 50,
+                                    label="K de B")
 
             # Score
             score = self.manager.scores.get("diffie_hellman", 0)
             score_txt = self.font_label.render(
                 f"Puntuacion: {score} pts", True, C_TEXT_SEC)
             surface.blit(score_txt, (
-                WIDTH // 2 - score_txt.get_width() // 2,
-                ty + 90
+                WIDTH // 2 - score_txt.get_width() // 2, ty + 170
             ))
 
 

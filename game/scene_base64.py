@@ -5,12 +5,15 @@ import time
 
 from game.constants import (
     WIDTH, HEIGHT, C_BG, C_BG2, C_BG3, C_BORDER, C_TEXT_PRI,
-    C_TEXT_SEC, C_TEXT_HINT, C_ACCENT, C_GREEN, C_RED, C_BASE64,
-    C_PANEL, C_WHITE,
+    C_TEXT_SEC, C_TEXT_HINT, C_ACCENT, C_GREEN, C_RED, C_NEON, C_WHITE,
+    C_PANEL, C_BASE64, HINTS_CONFIG,
+)
+from game.ui.draw_assets import (
+    draw_server_rack, draw_office_floor, draw_wall,
+    draw_text_box, word_wrap,
 )
 from game.ui.dialogue import DialogueBox
 from game.ui.hud import HUD
-from game.ui.tile_renderer import get_separate_sprite, draw_floor
 from crypto.b64_utils import decode_partial
 
 
@@ -31,9 +34,9 @@ class _Block:
         self.home_y = 0.0
         self.dragging = False
         self.locked = False
-        self.slot_index = -1          # which slot this block sits in (-1 = pool)
-        self.flash_timer = 0.0        # red flash on wrong placement
-        self.lock_pulse = 0.0         # green pulse on correct placement
+        self.slot_index = -1
+        self.flash_timer = 0.0
+        self.lock_pulse = 0.0
         self.font = pygame.font.SysFont("monospace", 22, bold=True)
 
     @property
@@ -42,19 +45,19 @@ class _Block:
 
     def draw(self, surface):
         r = self.rect
-        # --- shadow ---
+        # Shadow when dragging
         if self.dragging:
             shadow = pygame.Surface((r.w + 6, r.h + 6), pygame.SRCALPHA)
             pygame.draw.rect(shadow, (0, 0, 0, 60), shadow.get_rect(),
                              border_radius=self.CORNER)
             surface.blit(shadow, (r.x + 3, r.y + 5))
 
-        # --- body ---
+        # Body
         body = pygame.Surface((r.w, r.h), pygame.SRCALPHA)
         fill = (*C_BG2, 230) if not self.locked else (*C_BG3, 240)
         pygame.draw.rect(body, fill, body.get_rect(), border_radius=self.CORNER)
 
-        # border colour
+        # Border colour
         if self.flash_timer > 0:
             border_col = C_RED
         elif self.locked:
@@ -64,13 +67,11 @@ class _Block:
         else:
             border_col = C_BORDER
 
-        border_w = 2
-        if self.lock_pulse > 0:
-            border_w = 3
+        border_w = 3 if self.lock_pulse > 0 else 2
         pygame.draw.rect(body, border_col, body.get_rect(), border_w,
                          border_radius=self.CORNER)
 
-        # green pulse glow
+        # Green pulse glow
         if self.lock_pulse > 0:
             glow = pygame.Surface((r.w, r.h), pygame.SRCALPHA)
             a = int(80 * self.lock_pulse)
@@ -80,8 +81,9 @@ class _Block:
 
         surface.blit(body, r.topleft)
 
-        # --- text ---
-        txt = self.font.render(self.text, True, C_WHITE if self.locked else C_BASE64)
+        # Text
+        txt = self.font.render(self.text, True,
+                               C_WHITE if self.locked else C_BASE64)
         tx = r.centerx - txt.get_width() // 2
         ty = r.centery - txt.get_height() // 2
         surface.blit(txt, (tx, ty))
@@ -94,10 +96,44 @@ class _Block:
 
 
 # ---------------------------------------------------------------------------
+# Base64 reference table data
+# ---------------------------------------------------------------------------
+_B64_CHARS = ("ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+              "abcdefghijklmnopqrstuvwxyz"
+              "0123456789+/")
+
+
+def _build_ref_lines():
+    """Build the base64 lookup table lines for the in-game panel."""
+    lines = ["BASE64 TABLA DE REFERENCIA"]
+    # Character rows, 6 per line
+    for row_start in range(0, 64, 6):
+        parts = []
+        for j in range(6):
+            idx = row_start + j
+            if idx < 64:
+                ch = _B64_CHARS[idx]
+                parts.append(f"{ch}={idx:<3}")
+        lines.append(" ".join(parts))
+    lines.append("")
+    lines.append("Cada 4 chars = 3 bytes ASCII")
+    lines.append("")
+    lines.append("SGVs -> S(18) G(6) V(21) s(44)")
+    lines.append("  -> 010010 000110 010101 101100")
+    lines.append("  -> 01001000 01100101 01101100")
+    lines.append("  ->    H        e        l")
+    lines.append("")
+    lines.append("'=' = padding (bytes faltantes)")
+    return lines
+
+
+_REF_LINES = _build_ref_lines()
+
+
+# ---------------------------------------------------------------------------
 # Base64Scene -- drag-and-drop ordering puzzle
 # ---------------------------------------------------------------------------
 class Base64Scene:
-    # layout constants
     POOL_X = 80
     POOL_Y = 140
     POOL_W = 300
@@ -105,19 +141,23 @@ class Base64Scene:
     SLOT_Y = 140
     SLOT_GAP = 80
     RESULT_Y = 540
-    EDU_X = 950
 
     def __init__(self, manager):
         self.manager = manager
         self.puzzle = manager.puzzles["base64"]
         self.dialogues_data = manager.dialogues["base64"]
 
-        # fonts
+        # Difficulty config
+        config = HINTS_CONFIG[self.manager.difficulty]
+        self.free_hints = config["free_hints"]
+        self.visual_aids = config["visual_aids"]
+
+        # Fonts
         self.font_slot_label = pygame.font.SysFont("monospace", 13, bold=True)
         self.font_result_label = pygame.font.SysFont("monospace", 16, bold=True)
         self.font_result_value = pygame.font.SysFont("monospace", 22, bold=True)
-        self.font_edu_title = pygame.font.SysFont("monospace", 16, bold=True)
-        self.font_edu = pygame.font.SysFont("monospace", 13)
+        self.font_ref = pygame.font.SysFont("monospace", 11)
+        self.font_ref_title = pygame.font.SysFont("monospace", 12, bold=True)
         self.font_hint_btn = pygame.font.SysFont("monospace", 13, bold=True)
         self.font_debrief_title = pygame.font.SysFont("monospace", 18, bold=True)
         self.font_debrief = pygame.font.SysFont("monospace", 14)
@@ -125,16 +165,17 @@ class Base64Scene:
 
         # HUD + dialogue
         self.hud = HUD()
-        self.hud.set_info("ESCENA 02 -- SALA DE SERVIDORES", "CAPA 2/4 -- BASE64")
+        self.hud.set_info("ESCENA 02 -- SALA DE SERVIDORES",
+                          "CAPA 2/4 -- BASE64")
         self.dialogue = DialogueBox()
 
-        # blocks
+        # Blocks
         block_texts = list(self.puzzle["blocks"])
         self.blocks = [_Block(t, i) for i, t in enumerate(block_texts)]
         random.shuffle(self.blocks)
         self._layout_pool()
 
-        # slots: list of 4, each None or a _Block reference
+        # Slots
         self.slots = [None, None, None, None]
         self.slot_rects = []
         for i in range(4):
@@ -142,22 +183,22 @@ class Base64Scene:
             ry = self.SLOT_Y + i * self.SLOT_GAP
             self.slot_rects.append(pygame.Rect(rx, ry, _Block.W, _Block.H))
 
-        # drag state
+        # Drag state
         self.dragged_block = None
         self.drag_offset_x = 0
         self.drag_offset_y = 0
 
-        # decoded result text
+        # Decoded result text
         self.decoded_text = ""
 
-        # timing / scoring
+        # Timing / scoring
         self.start_time = time.time()
         self.time_elapsed = 0.0
         self.hints_used = 0
         self.failed_attempts = 0
         self.completed = False
 
-        # hint buttons (3)
+        # Hint buttons (3)
         self.hint_rects = []
         for i in range(3):
             bx = self.POOL_X + i * 105
@@ -165,51 +206,67 @@ class Base64Scene:
             self.hint_rects.append(pygame.Rect(bx, by, 95, 30))
         self.hints_revealed = [False, False, False]
 
-        # debriefing popup
+        # VOLVER button
+        self.btn_volver = pygame.Rect(20, HEIGHT - 70, 140, 44)
+
+        # Debriefing popup
         self.show_debrief = False
-        self.debrief_rect = pygame.Rect(WIDTH // 2 - 280, HEIGHT // 2 - 160, 560, 320)
+        self.debrief_rect = pygame.Rect(
+            WIDTH // 2 - 280, HEIGHT // 2 - 180, 560, 360
+        )
         self.debrief_close_rect = pygame.Rect(0, 0, 180, 40)
         self.debrief_close_rect.centerx = self.debrief_rect.centerx
         self.debrief_close_rect.y = self.debrief_rect.bottom - 60
 
-        # dashed border animation
+        # Dashed border animation
         self.dash_offset = 0.0
 
-        # background sprites
-        self.bg_sprites = []
-        self._load_bg()
-
-        # floor surface (cached)
-        self.floor_surf = pygame.Surface((WIDTH, HEIGHT))
-        draw_floor(self.floor_surf, tile_col=0, tile_row=0)
-
-        # fade in
+        # Fade in
         self.fade_alpha = 255
         self.fade_timer = 0.0
 
-        # entrance dialogue
+        # Background (cached)
+        self._bg_ready = False
+        self._bg_surface = None
+
+        # Reference table scroll offset
+        self.ref_scroll = 0
+
+        # Visual aid pulse
+        self._aid_pulse = 0.0
+
+        # Entrance dialogue
         self.phase = "dialogue_enter"
-        self.dialogue.show(self.dialogues_data["enter"], on_complete=self._enter_done)
+        self.dialogue.show(self.dialogues_data["enter"],
+                           on_complete=self._enter_done)
 
     # ------------------------------------------------------------------
     # helpers
     # ------------------------------------------------------------------
-    def _load_bg(self):
-        positions = [
-            ("Sprite-0013.png", 2, 30, 90),
-            ("Sprite-0013.png", 2, 1100, 90),
-            ("Sprite-0013.png", 2, 30, 350),
-            ("Sprite-0013.png", 2, 1100, 350),
-        ]
-        for name, scale, x, y in positions:
-            try:
-                img = get_separate_sprite(name, scale=scale)
-                self.bg_sprites.append((img, x, y))
-            except Exception:
-                pass
+    def _build_bg(self):
+        """Render static background with pygame.draw only."""
+        self._bg_surface = pygame.Surface((WIDTH, HEIGHT))
+        draw_office_floor(self._bg_surface)
+        draw_wall(self._bg_surface, 0, wall_h=50)
+
+        # Dark overlay
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        overlay.fill((*C_BG, 180))
+        self._bg_surface.blit(overlay, (0, 0))
+
+        # Server racks (drawn with pygame.draw)
+        draw_server_rack(self._bg_surface, 30, 90, h=100)
+        draw_server_rack(self._bg_surface, 70, 90, h=100)
+        draw_server_rack(self._bg_surface, 1180, 90, h=100)
+        draw_server_rack(self._bg_surface, 1220, 90, h=100)
+        draw_server_rack(self._bg_surface, 30, 350, h=80)
+        draw_server_rack(self._bg_surface, 1180, 350, h=80)
+
+        self._bg_ready = True
 
     def _layout_pool(self):
-        pool_blocks = [b for b in self.blocks if b.slot_index == -1 and not b.locked]
+        pool_blocks = [b for b in self.blocks
+                       if b.slot_index == -1 and not b.locked]
         start_y = self.POOL_Y
         for i, b in enumerate(pool_blocks):
             b.home_x = self.POOL_X + 40
@@ -233,10 +290,11 @@ class Base64Scene:
         for i, s in enumerate(self.slots):
             if s.correct_index != i:
                 return
-        # all correct
+        # All correct
         self.completed = True
         self.time_elapsed = time.time() - self.start_time
-        score = max(100 - int(self.time_elapsed / 10) - self.hints_used * 15
+        score = max(100 - int(self.time_elapsed / 10)
+                    - self.hints_used * 15
                     - self.failed_attempts * 5, 10)
         self.manager.complete_puzzle("base64", score)
         self.dialogue.show(self.dialogues_data["success"],
@@ -255,14 +313,14 @@ class Base64Scene:
     # event handling
     # ------------------------------------------------------------------
     def handle_event(self, event):
-        # debriefing popup close
+        # Debriefing popup close
         if self.show_debrief:
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if self.debrief_close_rect.collidepoint(event.pos):
                     self.manager.change_scene("hub")
             return
 
-        # dialogue eats events
+        # Dialogue eats events
         if self.dialogue.active:
             self.dialogue.handle_event(event)
             return
@@ -270,23 +328,27 @@ class Base64Scene:
         if self.completed:
             return
 
-        # hint buttons
-        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            for i, hr in enumerate(self.hint_rects):
-                if hr.collidepoint(event.pos) and not self.hints_revealed[i]:
-                    self.hints_revealed[i] = True
-                    self.hints_used += 1
-                    return
-
-        # ---- drag and drop ----
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             mx, my = event.pos
-            # pick up block (topmost first -- iterate reversed draw order)
+
+            # VOLVER button
+            if self.btn_volver.collidepoint((mx, my)):
+                self.manager.change_scene("hub")
+                return
+
+            # Hint buttons
+            for i, hr in enumerate(self.hint_rects):
+                if hr.collidepoint((mx, my)) and not self.hints_revealed[i]:
+                    self.hints_revealed[i] = True
+                    if i >= self.free_hints:
+                        self.hints_used += 1
+                    return
+
+            # Drag and drop -- pick up block
             for b in reversed(self.blocks):
                 if b.locked:
                     continue
                 if b.rect.collidepoint(mx, my):
-                    # if block is in a slot, remove it first
                     if b.slot_index >= 0:
                         self.slots[b.slot_index] = None
                         b.slot_index = -1
@@ -295,7 +357,6 @@ class Base64Scene:
                     self.drag_offset_x = b.x - mx
                     self.drag_offset_y = b.y - my
                     self.dragged_block = b
-                    # move to end so it draws on top
                     self.blocks.remove(b)
                     self.blocks.append(b)
                     break
@@ -314,9 +375,7 @@ class Base64Scene:
                 placed = False
                 if slot_i >= 0:
                     if self.slots[slot_i] is None:
-                        # check correctness
                         if b.correct_index == slot_i:
-                            # correct
                             b.locked = True
                             b.lock_pulse = 1.0
                             b.slot_index = slot_i
@@ -327,14 +386,12 @@ class Base64Scene:
                             self._update_decoded()
                             self._check_completion()
                         else:
-                            # wrong -- flash red and return
                             b.flash_timer = 0.6
                             self.failed_attempts += 1
                             self.dialogue.show(self.dialogues_data["error"])
                 if not placed:
                     b.slot_index = -1
                     self._layout_pool()
-                    # snap back
                     b.x = b.home_x
                     b.y = b.home_y
                 self.dragged_block = None
@@ -343,7 +400,7 @@ class Base64Scene:
     # update
     # ------------------------------------------------------------------
     def update(self, dt):
-        # fade
+        # Fade
         if self.fade_timer < 1.0:
             self.fade_timer += dt
             t = min(self.fade_timer / 1.0, 1.0)
@@ -353,72 +410,74 @@ class Base64Scene:
         for b in self.blocks:
             b.update(dt)
 
-        # dashed border animation
+        # Dashed border animation
         self.dash_offset += dt * 30
         if self.dash_offset > 20:
             self.dash_offset -= 20
+
+        # Visual aid pulse
+        self._aid_pulse += dt * 3.0
 
     # ------------------------------------------------------------------
     # draw
     # ------------------------------------------------------------------
     def draw(self, surface):
-        # floor
-        floor_copy = self.floor_surf.copy()
-        dark = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        dark.fill((0, 0, 0, 180))
-        floor_copy.blit(dark, (0, 0))
-        surface.blit(floor_copy, (0, 0))
+        # Background
+        if not self._bg_ready:
+            self._build_bg()
+        surface.blit(self._bg_surface, (0, 0))
 
-        # bg sprites (server racks)
-        for img, x, y in self.bg_sprites:
-            faded = img.copy()
-            faded.set_alpha(40)
-            surface.blit(faded, (x, y))
+        # Left panel label
+        draw_text_box(surface, "BLOQUES  BASE64",
+                      self.POOL_X + 40, self.POOL_Y - 30,
+                      self.font_slot_label, color=C_TEXT_SEC, bg_alpha=200)
 
-        # -- left panel label --
-        lbl = self.font_slot_label.render("BLOQUES  BASE64", True, C_TEXT_SEC)
-        surface.blit(lbl, (self.POOL_X + 40, self.POOL_Y - 30))
+        # Right panel label
+        draw_text_box(surface, "ORDEN  DE  DECODIFICACION",
+                      self.SLOT_X, self.SLOT_Y - 30,
+                      self.font_slot_label, color=C_TEXT_SEC, bg_alpha=200)
 
-        # -- right panel label --
-        lbl2 = self.font_slot_label.render("ORDEN  DE  DECODIFICACION", True, C_TEXT_SEC)
-        surface.blit(lbl2, (self.SLOT_X, self.SLOT_Y - 30))
-
-        # -- draw slots --
+        # Draw slots
         for i, sr in enumerate(self.slot_rects):
             if self.slots[i] is None:
                 self._draw_dashed_rect(surface, sr, C_BORDER)
-            # slot number label
             num = self.font_slot_label.render(f"SLOT {i + 1}", True, C_TEXT_HINT)
             surface.blit(num, (sr.right + 14, sr.y + 16))
 
-        # -- draw blocks (non-dragged first) --
+        # Visual aids for slots (Dummy mode)
+        if self.visual_aids and not self.completed:
+            self._draw_visual_aids(surface)
+
+        # Draw blocks (non-dragged first)
         for b in self.blocks:
             if not b.dragging:
                 b.draw(surface)
-        # dragged block on top
         if self.dragged_block:
             self.dragged_block.draw(surface)
 
-        # -- result panel --
+        # Result panel
         self._draw_result_panel(surface)
 
-        # -- educational panel --
-        self._draw_edu_panel(surface)
+        # Reference table panel (replaces old edu panel)
+        self._draw_ref_table(surface)
 
-        # -- hint buttons --
+        # Hint buttons
         self._draw_hint_buttons(surface)
 
-        # -- HUD --
+        # VOLVER button
+        self._draw_button(surface, self.btn_volver, "VOLVER", C_ACCENT)
+
+        # HUD
         self.hud.draw(surface)
 
-        # -- dialogue --
+        # Dialogue
         self.dialogue.draw(surface)
 
-        # -- debriefing --
+        # Debriefing
         if self.show_debrief:
             self._draw_debrief(surface)
 
-        # -- fade --
+        # Fade
         if self.fade_alpha > 0:
             fade = pygame.Surface((WIDTH, HEIGHT))
             fade.fill((0, 0, 0))
@@ -457,133 +516,166 @@ class Base64Scene:
         panel_h = 60
         px = self.POOL_X
         py = self.RESULT_Y
-        panel = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
-        panel.fill((*C_PANEL, 200))
-        pygame.draw.rect(panel, C_BORDER, panel.get_rect(), 1,
+
+        # Solid black background
+        pygame.draw.rect(surface, (0, 0, 0), (px, py, panel_w, panel_h))
+        pygame.draw.rect(surface, C_BORDER, (px, py, panel_w, panel_h), 1,
                          border_radius=6)
-        surface.blit(panel, (px, py))
 
         lbl = self.font_result_label.render("RESULTADO:", True, C_TEXT_SEC)
         surface.blit(lbl, (px + 16, py + 8))
 
         display = self.decoded_text if self.decoded_text else "________"
-        col = C_GREEN if self.completed else C_BASE64
+        col = C_GREEN if self.completed else C_NEON
         val = self.font_result_value.render(display, True, col)
         surface.blit(val, (px + 16, py + 30))
 
-    def _draw_edu_panel(self, surface):
-        ex = self.EDU_X
+    def _draw_ref_table(self, surface):
+        """Draw the built-in Base64 reference/lookup table panel."""
+        ex = 680
         ey = self.POOL_Y - 10
-        pw = 300
-        ph = 290
-        panel = pygame.Surface((pw, ph), pygame.SRCALPHA)
-        panel.fill((*C_PANEL, 180))
-        pygame.draw.rect(panel, C_BORDER, panel.get_rect(), 1,
-                         border_radius=6)
-        surface.blit(panel, (ex, ey))
+        pw = 580
+        line_h = 15
+        ph = len(_REF_LINES) * line_h + 30
 
-        title = self.font_edu_title.render("BASE64", True, C_BASE64)
-        surface.blit(title, (ex + 16, ey + 14))
+        # Solid black background for full legibility
+        pygame.draw.rect(surface, (0, 0, 0), (ex, ey, pw, ph))
+        pygame.draw.rect(surface, C_BASE64, (ex, ey, pw, ph), 1,
+                         border_radius=4)
 
-        lines = [
-            "",
-            "4 chars = 3 bytes",
-            "64 simbolos posibles",
-            "",
-            "A-Z, a-z, 0-9, +, /",
-            "",
-            "No es cifrado -- es",
-            "codificacion binaria",
-            "",
-            "Padding: '=' indica",
-            "bytes faltantes",
-        ]
-        ly = ey + 44
-        for line in lines:
+        # Title line
+        title = self.font_ref_title.render(_REF_LINES[0], True, C_NEON)
+        surface.blit(title, (ex + 10, ey + 8))
+
+        # Separator
+        pygame.draw.line(surface, C_BORDER,
+                         (ex + 10, ey + 24), (ex + pw - 10, ey + 24), 1)
+
+        # Table lines
+        ly = ey + 30
+        for line in _REF_LINES[1:]:
             if line:
-                txt = self.font_edu.render(line, True, C_TEXT_SEC)
-                surface.blit(txt, (ex + 16, ly))
-            ly += 20
+                # Use neon for the worked example lines, dimmer for data
+                if line.startswith("  ->") or line.startswith("SGVs"):
+                    col = C_NEON
+                elif line.startswith("Cada") or line.startswith("'='"):
+                    col = C_BASE64
+                else:
+                    col = C_TEXT_PRI
+                txt = self.font_ref.render(line, True, col)
+                surface.blit(txt, (ex + 10, ly))
+            ly += line_h
 
     def _draw_hint_buttons(self, surface):
         for i, hr in enumerate(self.hint_rects):
             revealed = self.hints_revealed[i]
-            btn = pygame.Surface((hr.w, hr.h), pygame.SRCALPHA)
             if revealed:
-                btn.fill((*C_BG3, 200))
-            else:
-                btn.fill((*C_PANEL, 200))
-            border_c = C_TEXT_HINT if not revealed else C_ACCENT
-            pygame.draw.rect(btn, border_c, btn.get_rect(), 1,
-                             border_radius=4)
-            surface.blit(btn, hr.topleft)
-
-            label = f"PISTA {i + 1}" if not revealed else f"PISTA {i + 1}"
-            txt = self.font_hint_btn.render(label, True,
-                                            C_ACCENT if not revealed else C_TEXT_SEC)
-            tx = hr.centerx - txt.get_width() // 2
-            ty = hr.centery - txt.get_height() // 2
-            surface.blit(txt, (tx, ty))
-
-            if revealed:
+                # Show hint on solid black bg
                 hint_text = self.puzzle["hints"][i]
-                ht = self.font_edu.render(hint_text, True, C_TEXT_HINT)
-                surface.blit(ht, (hr.x, hr.bottom + 6))
+                draw_text_box(surface, hint_text, hr.x, hr.y,
+                              self.font_ref, color=C_NEON, bg_alpha=240,
+                              padding=8, max_width=280)
+            else:
+                # Button
+                if i < self.free_hints:
+                    label = f"PISTA {i + 1} (GRATIS)"
+                else:
+                    label = f"PISTA {i + 1} (-15pts)"
+                self._draw_button(surface, hr, label, C_ACCENT, small=True)
+
+    def _draw_visual_aids(self, surface):
+        """Dummy mode: arrows pointing blocks to their correct slots."""
+        pulse = 0.5 + 0.5 * math.sin(self._aid_pulse)
+
+        for b in self.blocks:
+            if b.locked or b.dragging:
+                continue
+            # Draw arrow from block to its correct slot
+            slot_r = self.slot_rects[b.correct_index]
+            sx = int(b.x + _Block.W)
+            sy = int(b.y + _Block.H // 2)
+            ex = slot_r.x
+            ey = slot_r.y + _Block.H // 2
+
+            alpha = int(100 + 80 * pulse)
+            arrow_surf = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+            col = (*C_NEON, alpha)
+            pygame.draw.line(arrow_surf, col, (sx, sy), (ex, ey), 2)
+            # Arrowhead
+            angle = math.atan2(ey - sy, ex - sx)
+            head_len = 10
+            p1 = (ex - int(head_len * math.cos(angle - 0.4)),
+                  ey - int(head_len * math.sin(angle - 0.4)))
+            p2 = (ex - int(head_len * math.cos(angle + 0.4)),
+                  ey - int(head_len * math.sin(angle + 0.4)))
+            pygame.draw.polygon(arrow_surf, col, [(ex, ey), p1, p2])
+            surface.blit(arrow_surf, (0, 0))
+
+            # Label the correct slot number on the block
+            lbl_surf = pygame.Surface((50, 18), pygame.SRCALPHA)
+            lbl_surf.fill((0, 0, 0, int(180 * pulse)))
+            font_tiny = pygame.font.SysFont("monospace", 10, bold=True)
+            lbl = font_tiny.render(f"SLOT {b.correct_index + 1}", True, C_NEON)
+            lbl_surf.blit(lbl, (2, 2))
+            surface.blit(lbl_surf, (int(b.x + _Block.W - 52), int(b.y - 14)))
+
+    def _draw_button(self, surface, rect, text, color, small=False):
+        mx, my = pygame.mouse.get_pos()
+        hover = rect.collidepoint(mx, my)
+
+        bg_t = 0.25 if hover else 0.10
+        bg = tuple(int(C_PANEL[i] + (color[i] - C_PANEL[i]) * bg_t)
+                   for i in range(3))
+        border = color if hover else C_BORDER
+
+        pygame.draw.rect(surface, bg, rect, border_radius=4)
+        pygame.draw.rect(surface, border, rect, 1, border_radius=4)
+
+        font = self.font_ref if small else self.font_hint_btn
+        txt_color = C_WHITE if hover else C_TEXT_PRI
+        lbl = font.render(text, True, txt_color)
+        surface.blit(
+            lbl,
+            (rect.centerx - lbl.get_width() // 2,
+             rect.centery - lbl.get_height() // 2),
+        )
 
     def _draw_debrief(self, surface):
-        # overlay
+        # Dark overlay
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 180))
+        overlay.fill((0, 0, 0, 200))
         surface.blit(overlay, (0, 0))
 
         r = self.debrief_rect
-        panel = pygame.Surface((r.w, r.h), pygame.SRCALPHA)
-        panel.fill((*C_PANEL, 240))
-        pygame.draw.rect(panel, C_BASE64, panel.get_rect(), 2,
-                         border_radius=8)
-        surface.blit(panel, r.topleft)
+        # Solid black popup
+        pygame.draw.rect(surface, (0, 0, 0), r)
+        pygame.draw.rect(surface, C_BASE64, r, 2, border_radius=8)
 
-        # title
-        title = self.font_debrief_title.render("DEBRIEFING -- BASE64", True, C_BASE64)
+        # Title
+        title = self.font_debrief_title.render(
+            "DEBRIEFING -- BASE64", True, C_NEON
+        )
         surface.blit(title, (r.x + 20, r.y + 20))
 
-        # body -- word wrap
+        # Body text with word-wrap
         text = self.puzzle["debriefing"]
-        self._draw_wrapped(surface, text, self.font_debrief, C_TEXT_SEC,
-                           r.x + 20, r.y + 55, r.w - 40, 20)
+        draw_text_box(surface, text, r.x + 20, r.y + 55,
+                      self.font_debrief, color=C_NEON,
+                      bg_alpha=0, padding=4, max_width=r.w - 40)
 
-        # score
+        # Score
         elapsed = self.time_elapsed
         score = max(100 - int(elapsed / 10) - self.hints_used * 15
                     - self.failed_attempts * 5, 10)
         score_txt = self.font_debrief_title.render(
-            f"PUNTUACION: {score}/100", True, C_GREEN)
+            f"PUNTUACION: {score}/100", True, C_GREEN
+        )
         surface.blit(score_txt, (r.x + 20, r.bottom - 90))
 
-        # close button
+        # Close button
         cr = self.debrief_close_rect
-        btn = pygame.Surface((cr.w, cr.h), pygame.SRCALPHA)
-        btn.fill((*C_BG2, 220))
-        pygame.draw.rect(btn, C_ACCENT, btn.get_rect(), 2, border_radius=4)
-        surface.blit(btn, cr.topleft)
-        cl = self.font_debrief_btn.render("[ VOLVER AL HUB ]", True, C_ACCENT)
+        pygame.draw.rect(surface, (0, 0, 0), cr)
+        pygame.draw.rect(surface, C_ACCENT, cr, 2, border_radius=4)
+        cl = self.font_debrief_btn.render("[ VOLVER AL HUB ]", True, C_NEON)
         surface.blit(cl, (cr.centerx - cl.get_width() // 2,
                           cr.centery - cl.get_height() // 2))
-
-    def _draw_wrapped(self, surface, text, font, color, x, y, max_w, line_h):
-        words = text.split()
-        line = ""
-        cy = y
-        for word in words:
-            test = (line + " " + word).strip()
-            tw = font.size(test)[0]
-            if tw > max_w and line:
-                rendered = font.render(line, True, color)
-                surface.blit(rendered, (x, cy))
-                cy += line_h
-                line = word
-            else:
-                line = test
-        if line:
-            rendered = font.render(line, True, color)
-            surface.blit(rendered, (x, cy))

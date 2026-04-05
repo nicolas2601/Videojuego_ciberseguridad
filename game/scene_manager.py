@@ -20,6 +20,13 @@ class SceneManager:
         self.scores = {}
         self.completed_scenes = set()
 
+        # Difficulty (set from intro)
+        from game.constants import DIFFICULTY_MID
+        self.difficulty = DIFFICULTY_MID
+
+        # Hub visit count (for progressive dialogues)
+        self.hub_visits = 0
+
         # Load data
         with open(os.path.join(BASE_DIR, "data", "puzzles.json"), "r", encoding="utf-8") as f:
             self.puzzles = json.load(f)

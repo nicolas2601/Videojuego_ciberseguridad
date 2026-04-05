@@ -1,18 +1,20 @@
 import pygame
 import math
 import random
-from game.constants import (WIDTH, HEIGHT, C_BG, C_BG2, C_BORDER, C_TEXT_PRI,
-    C_TEXT_SEC, C_TEXT_HINT, C_ACCENT, C_GREEN, C_RED, C_AMBER, C_PANEL, C_WHITE,
-    C_CAESAR, C_BASE64, C_HASH, C_DH)
+from game.constants import (WIDTH, HEIGHT, C_BG, C_BG2, C_BG3, C_BORDER, C_TEXT_PRI,
+    C_TEXT_SEC, C_TEXT_HINT, C_ACCENT, C_GREEN, C_RED, C_NEON, C_WHITE, C_PANEL,
+    C_DH, C_AMBER, C_CAESAR, C_BASE64, C_HASH, HINTS_CONFIG)
+from game.ui.draw_assets import (draw_office_floor, draw_wall, draw_text_box, word_wrap,
+    draw_desk, draw_monitor, draw_server_rack)
 from game.ui.dialogue import DialogueBox
 from game.ui.hud import HUD
 
 
 # Score row config: (key, display_name, color)
 _SCORE_ROWS = [
-    ("caesar",        "CESAR",          C_CAESAR),
-    ("base64",        "BASE64",         C_BASE64),
-    ("hash",          "SHA-256",        C_HASH),
+    ("caesar",         "CESAR",          C_CAESAR),
+    ("base64",         "BASE64",         C_BASE64),
+    ("hash",           "SHA-256",        C_HASH),
     ("diffie_hellman", "DIFFIE-HELLMAN", C_DH),
 ]
 
@@ -42,7 +44,7 @@ class _Particle:
         self.size = random.choice([1, 1, 1, 2, 2, 3])
         self.max_alpha = random.randint(60, 160)
         self.alpha = random.randint(20, self.max_alpha)
-        base_colors = [C_GREEN, C_AMBER, C_ACCENT, C_TEXT_SEC]
+        base_colors = [C_NEON, C_AMBER, C_ACCENT, C_GREEN]
         self.color = random.choice(base_colors)
 
     def update(self, dt):
@@ -109,7 +111,7 @@ class EndingScene:
         if ending_msgs:
             self.dialogue.show(ending_msgs)
 
-        # CRT scanlines (pre-rendered)
+        # CRT scanlines (pre-rendered with pygame.draw only)
         self._build_scanlines()
 
         # Particles
@@ -119,6 +121,7 @@ class EndingScene:
         self.glow_timer = 0.0
 
     def _build_scanlines(self):
+        """CRT scanlines effect using only pygame.draw."""
         self.scanline_surf = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
         for y in range(0, HEIGHT, 3):
             pygame.draw.line(self.scanline_surf, (0, 0, 0, 22), (0, y), (WIDTH, y), 1)
@@ -155,7 +158,8 @@ class EndingScene:
     # ------------------------------------------------------------------
 
     def draw(self, surface):
-        surface.fill(C_BG)
+        # Solid black background for legibility
+        surface.fill((0, 0, 0))
 
         # Particles background
         self._draw_particles(surface)
@@ -199,15 +203,15 @@ class EndingScene:
                 surface.blit(ps, (int(p.x) - p.size, int(p.y) - p.size))
 
     def _draw_title(self, surface):
-        # "MISION COMPLETADA" with green glow
+        """MISION COMPLETADA with neon glow on solid black."""
         title_text = "MISION COMPLETADA"
-        title_surf = self.font_title.render(title_text, True, C_GREEN)
+        title_surf = self.font_title.render(title_text, True, C_NEON)
         tx = WIDTH // 2 - title_surf.get_width() // 2
         ty = 70
 
-        # Pulsing glow
+        # Pulsing glow using C_NEON
         glow_alpha = int(40 + 25 * math.sin(self.glow_timer * 2.5))
-        glow = self.font_title.render(title_text, True, C_GREEN)
+        glow = self.font_title.render(title_text, True, C_NEON)
         glow.set_alpha(glow_alpha)
         surface.blit(glow, (tx - 2, ty - 1))
         surface.blit(glow, (tx + 2, ty + 1))
@@ -219,13 +223,22 @@ class EndingScene:
         title_surf.set_alpha(int(255 * fade_t))
         surface.blit(title_surf, (tx, ty))
 
+        # Decorative line under title
+        line_w = title_surf.get_width() + 40
+        line_x = WIDTH // 2 - line_w // 2
+        line_y = ty + title_surf.get_height() + 4
+        line_alpha = int(120 * fade_t)
+        line_surf = pygame.Surface((line_w, 2), pygame.SRCALPHA)
+        pygame.draw.line(line_surf, (*C_NEON, line_alpha), (0, 0), (line_w, 0), 2)
+        surface.blit(line_surf, (line_x, line_y))
+
         # Subtitle
         sub_text = "OPERACION DEADLOCK -- NEUTRALIZADA"
         sub_surf = self.font_subtitle.render(sub_text, True, C_TEXT_SEC)
         sub_fade = min(1.0, max(0, (self.elapsed - 0.3) / self.fade_in_duration))
         sub_surf.set_alpha(int(255 * sub_fade))
         sx = WIDTH // 2 - sub_surf.get_width() // 2
-        surface.blit(sub_surf, (sx, ty + title_surf.get_height() + 8))
+        surface.blit(sub_surf, (sx, line_y + 10))
 
     def _draw_score_table(self, surface):
         table_x = WIDTH // 2 - 200
@@ -235,13 +248,13 @@ class EndingScene:
         dot_char = "."
 
         # Panel background
-        panel_h = len(self.row_scores) * row_h + row_h + 30  # rows + total + padding
+        panel_h = len(self.row_scores) * row_h + row_h + 30
         panel = pygame.Surface((table_w + 40, panel_h), pygame.SRCALPHA)
-        panel.fill((C_PANEL[0], C_PANEL[1], C_PANEL[2], 180))
-        pygame.draw.rect(panel, (*C_BORDER, 120), panel.get_rect(), 1)
+        panel.fill((C_PANEL[0], C_PANEL[1], C_PANEL[2], 200))
+        pygame.draw.rect(panel, (*C_NEON, 60), panel.get_rect(), 1)
         surface.blit(panel, (table_x - 20, table_y - 10))
 
-        # Individual rows
+        # Individual rows with staggered fade-in
         for i, (name, pts, color) in enumerate(self.row_scores):
             row_fade_start = 0.6 + i * _ROW_FADE_DELAY
             fade_t = min(1.0, max(0, (self.elapsed - row_fade_start) / 0.4))
@@ -275,16 +288,16 @@ class EndingScene:
         div_fade = min(1.0, max(0, (self.elapsed - div_fade_start) / 0.3))
         if div_fade > 0:
             div_y = table_y + len(self.row_scores) * row_h
-            line_color = (*C_BORDER, int(200 * div_fade))
-            pygame.draw.line(surface, line_color,
-                             (table_x, div_y), (table_x + table_w, div_y), 1)
+            line_surf = pygame.Surface((table_w, 1), pygame.SRCALPHA)
+            line_surf.fill((*C_NEON, int(120 * div_fade)))
+            surface.blit(line_surf, (table_x, div_y))
 
             # Total row
             total_fade_start = div_fade_start + 0.3
             total_fade = min(1.0, max(0, (self.elapsed - total_fade_start) / 0.4))
             if total_fade > 0:
                 ty = div_y + 10
-                total_label = self.font_total_label.render("TOTAL", True, C_TEXT_PRI)
+                total_label = self.font_total_label.render("TOTAL", True, C_NEON)
                 total_label.set_alpha(int(255 * total_fade))
                 surface.blit(total_label, (table_x, ty))
 
@@ -302,24 +315,34 @@ class EndingScene:
 
         ry = 430
 
-        # Rank title
+        # Rank panel background
+        rw = 400
+        rh = 80
+        rx_panel = WIDTH // 2 - rw // 2
+        panel = pygame.Surface((rw, rh), pygame.SRCALPHA)
+        panel.fill((C_PANEL[0], C_PANEL[1], C_PANEL[2], int(180 * fade_t)))
+        pygame.draw.rect(panel, (*self.rank_color, int(80 * fade_t)),
+                         panel.get_rect(), 1)
+        surface.blit(panel, (rx_panel, ry - 10))
+
+        # Sub-label above rank
+        sub = self.font_rank_sub.render("RANGO ASIGNADO", True, C_TEXT_HINT)
+        sub.set_alpha(int(200 * fade_t))
+        surface.blit(sub, (WIDTH // 2 - sub.get_width() // 2, ry))
+
+        # Rank name
         rank_surf = self.font_rank.render(self.rank_name, True, self.rank_color)
         rank_surf.set_alpha(int(255 * fade_t))
         rx = WIDTH // 2 - rank_surf.get_width() // 2
-        surface.blit(rank_surf, (rx, ry))
+        surface.blit(rank_surf, (rx, ry + 22))
 
         # Glow for high rank
         if self.total >= 340:
             glow_a = int(30 + 20 * math.sin(self.glow_timer * 3.0))
             glow = self.font_rank.render(self.rank_name, True, self.rank_color)
             glow.set_alpha(int(glow_a * fade_t))
-            surface.blit(glow, (rx - 1, ry - 1))
-            surface.blit(glow, (rx + 1, ry + 1))
-
-        # Sub-label
-        sub = self.font_rank_sub.render("RANGO ASIGNADO", True, C_TEXT_HINT)
-        sub.set_alpha(int(200 * fade_t))
-        surface.blit(sub, (WIDTH // 2 - sub.get_width() // 2, ry + rank_surf.get_height() + 6))
+            surface.blit(glow, (rx - 1, ry + 21))
+            surface.blit(glow, (rx + 1, ry + 23))
 
     def _draw_button(self, surface):
         btn_fade_start = 0.6 + (len(self.row_scores) + 2) * _ROW_FADE_DELAY + 0.8
@@ -332,14 +355,14 @@ class EndingScene:
         bg_alpha = int((200 if self.btn_hovered else 150) * fade_t)
         panel.fill((C_PANEL[0], C_PANEL[1], C_PANEL[2], bg_alpha))
 
-        border_c = C_WHITE if self.btn_hovered else C_ACCENT
+        border_c = C_WHITE if self.btn_hovered else C_NEON
         bw = 2 if self.btn_hovered else 1
         border_alpha = int(220 * fade_t)
         pygame.draw.rect(panel, (*border_c, border_alpha), panel.get_rect(), bw)
         surface.blit(panel, rect.topleft)
 
         lbl = self.font_btn.render("VOLVER AL INICIO", True,
-                                   C_WHITE if self.btn_hovered else C_ACCENT)
+                                   C_WHITE if self.btn_hovered else C_NEON)
         lbl.set_alpha(int(255 * fade_t))
         surface.blit(lbl, (
             rect.centerx - lbl.get_width() // 2,
