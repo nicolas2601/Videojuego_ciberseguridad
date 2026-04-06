@@ -830,12 +830,16 @@ class TestHashLogic:
         assert len(result) == 64
         assert all(c in "0123456789abcdef" for c in result)
 
-    def test_hash_scene_candidates_match_puzzle_data(self):
-        """Hash scene uses the same candidates as puzzle data."""
-        from game.scene_hash import HashScene
+    def test_hash_scene_rounds_use_puzzle_data(self):
+        """Hash scene builds rounds from puzzle JSON data."""
+        from game.scene_hash import _build_rounds
         with open(os.path.join(PROJECT_ROOT, "data", "puzzles.json"), "r") as f:
             puzzles = json.load(f)
-        assert HashScene.CANDIDATES == puzzles["hash"]["candidates"]
+        rounds = _build_rounds(puzzles["hash"])
+        assert len(rounds) == 3
+        assert rounds[0]["hlen"] == 64
+        assert rounds[1]["hlen"] == 8
+        assert rounds[2]["hlen"] == 16
 
 
 # ===================================================================
@@ -1310,11 +1314,11 @@ class TestDataFiles:
         with open(os.path.join(PROJECT_ROOT, "data", "puzzles.json"), "r") as f:
             data = json.load(f)
         h = data["hash"]
-        assert "candidates" in h
-        assert "target_word" in h
-        assert "hints" in h
-        assert len(h["hints"]) == 3
-        assert len(h["candidates"]) == 5
+        assert "round_1" in h
+        assert "round_2" in h
+        assert "round_3" in h
+        assert "candidates" in h["round_1"]
+        assert len(h["round_1"]["candidates"]) == 5
 
     def test_all_dialogue_scenes_have_enter(self):
         """Every puzzle scene dialogue should have an 'enter' key."""

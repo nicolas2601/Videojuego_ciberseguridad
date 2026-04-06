@@ -1,96 +1,215 @@
 {
+  "lore": {
+    "protagonist": "NOVA",
+    "agency": "CipherBureau",
+    "enemy": "PHANTOM PROTOCOL",
+    "mission": "Infiltrar la sede abandonada de Phantom Protocol y descifrar la evidencia antes de que la borren remotamente."
+  },
   "intro": {
     "welcome": [
-      {"speaker": "CONTROL", "text": "Agente, bienvenido a la Operaci\u00f3n DEADLOCK."},
-      {"speaker": "CONTROL", "text": "Una organizaci\u00f3n criminal abandon\u00f3 su sede hace 48 horas. La evidencia sigue ah\u00ed."},
-      {"speaker": "CONTROL", "text": "Tu misi\u00f3n: infiltrar la sede y descifrar toda la informaci\u00f3n clasificada."},
-      {"speaker": "CONTROL", "text": "Cada sala contiene evidencia protegida con un m\u00e9todo criptogr\u00e1fico distinto."},
-      {"speaker": "CONTROL", "text": "Explora la oficina. Elige por d\u00f3nde empezar."}
+      {"speaker": "CONTROL", "text": "Agente NOVA, bienvenida a la Operaci\u00f3n DEADLOCK."},
+      {"speaker": "CONTROL", "text": "Phantom Protocol rob\u00f3 documentos clasificados hace 48 horas. Los cifraron en capas antes de subirlos a su servidor central."},
+      {"speaker": "CONTROL", "text": "La sede est\u00e1 abandonada pero los sistemas siguen activos. Tienes una ventana limitada antes de que activen el borrado remoto."},
+      {"speaker": "NOVA", "text": "Cuatro salas, cuatro especialistas, cuatro m\u00e9todos de cifrado. Entendido."},
+      {"speaker": "CONTROL", "text": "Cada sala fue dise\u00f1ada por un miembro distinto de Phantom Protocol. Conoce a tu enemigo, NOVA."}
     ]
   },
   "hub": {
     "enter": [
-      {"speaker": "CONTROL", "text": "Est\u00e1s en la sede principal. Mueve a tu agente con WASD."},
-      {"speaker": "CONTROL", "text": "Hay cuatro salas por investigar. Ac\u00e9rcate a una puerta y pulsa E para entrar."}
+      {"speaker": "NOVA", "text": "Estoy dentro de la sede. El lugar est\u00e1 vac\u00edo pero los monitores siguen encendidos."},
+      {"speaker": "NOVA", "text": "Cuatro puertas, cuatro salas. Puedo elegir por d\u00f3nde empezar. Voy a moverme con cuidado."}
     ],
     "progress_1": [
-      {"speaker": "CONTROL", "text": "Primera sala despejada. Buen comienzo, agente."},
-      {"speaker": "CONTROL", "text": "Los datos que obtuviste revelan conexiones con las otras salas. Sigue explorando."}
+      {"speaker": "NOVA", "text": "Primera capa descifrada. Los datos parciales revelan conexiones entre los miembros de Phantom Protocol."},
+      {"speaker": "CONTROL", "text": "Buen trabajo, NOVA. Cada capa que rompas nos acerca m\u00e1s al n\u00facleo de la operaci\u00f3n."}
     ],
     "progress_2": [
-      {"speaker": "CONTROL", "text": "Mitad del trabajo hecho. Est\u00e1s reconstruyendo el rompecabezas."},
-      {"speaker": "CONTROL", "text": "Cada capa de cifrado que rompes nos acerca m\u00e1s al n\u00facleo de la operaci\u00f3n."}
+      {"speaker": "NOVA", "text": "Mitad del trabajo hecho. Empiezo a ver el patr\u00f3n... cada especialista proteg\u00eda una parte del rompecabezas."},
+      {"speaker": "CONTROL", "text": "Los documentos parciales ya son \u00fatiles. Pero necesitamos el conjunto completo para el caso."}
     ],
     "progress_3": [
-      {"speaker": "CONTROL", "text": "Solo queda una sala. La m\u00e1s cr\u00edtica."},
-      {"speaker": "CONTROL", "text": "Lo que encuentres ah\u00ed dentro cerrar\u00e1 el caso. Prep\u00e1rate."}
+      {"speaker": "NOVA", "text": "Una sala m\u00e1s. El Coordinador General... este es el m\u00e1s sofisticado de todos."},
+      {"speaker": "CONTROL", "text": "Cuidado, NOVA. Hemos detectado actividad en el canal de comunicaciones. Podr\u00eda haber un interceptor."}
     ],
     "all_done": [
-      {"speaker": "CONTROL", "text": "\u00a1Todas las salas han sido descifradas!"},
-      {"speaker": "CONTROL", "text": "Dir\u00edgete a la salida para completar la misi\u00f3n. Has hecho un trabajo excepcional."}
+      {"speaker": "NOVA", "text": "Todas las capas descifradas. Tengo el paquete completo."},
+      {"speaker": "CONTROL", "text": "\u00a1Misi\u00f3n cumplida! Dir\u00edgete a la salida para transmitir la evidencia. Excelente trabajo, agente."}
     ]
   },
   "caesar": {
     "enter": [
-      {"speaker": "ANALISTA", "text": "La nota estaba debajo del escritorio. El texto no tiene sentido..."},
-      {"speaker": "ANALISTA", "text": "Parece un cifrado por desplazamiento simple. Gira la rueda hasta que las palabras tengan sentido."}
+      {"speaker": "NOVA", "text": "Sala del Archivista. Huele a caf\u00e9 viejo y papel. Este tipo es de la vieja escuela."},
+      {"speaker": "NOVA", "text": "Hay mensajes cifrados llegando al terminal en tiempo real. Cifrado por desplazamiento... C\u00e9sar cl\u00e1sico."},
+      {"speaker": "NOVA", "text": "El Archivista dec\u00eda que 'lo que ha funcionado 2000 a\u00f1os no necesita reemplazarse'. Veamos si ten\u00eda raz\u00f3n."}
+    ],
+    "round_1_intro": [
+      {"speaker": "NOVA", "text": "Primer mensaje interceptado. El desplazamiento est\u00e1 visible en la pantalla del Archivista... descuidado."},
+      {"speaker": "NOVA", "text": "Solo tengo que ajustar la rueda al desplazamiento correcto y confirmar antes de que el mensaje expire."}
+    ],
+    "round_2_intro": [
+      {"speaker": "NOVA", "text": "M\u00e1s mensajes, pero ahora el shift cambia entre cada uno. Ya no est\u00e1 visible."},
+      {"speaker": "NOVA", "text": "El panel de frecuencia de letras se est\u00e1 llenando... si la 'E' es la m\u00e1s com\u00fan en espa\u00f1ol, puedo deducir el desplazamiento."}
+    ],
+    "round_3_intro": [
+      {"speaker": "NOVA", "text": "\u00a1Tres mensajes simult\u00e1neos! Cada uno con un shift distinto. Y se autodestruyen en 30 segundos."},
+      {"speaker": "NOVA", "text": "Sin panel de frecuencias esta vez. Tengo que ser r\u00e1pida o pierdo la evidencia."}
+    ],
+    "reactive_wrong": [
+      {"speaker": "NOVA", "text": "No... ese desplazamiento no produce texto legible. El Archivista no escrib\u00eda basura."}
+    ],
+    "reactive_close": [
+      {"speaker": "NOVA", "text": "Casi... veo fragmentos de palabras. Estoy cerca del shift correcto."}
+    ],
+    "reactive_timeout": [
+      {"speaker": "NOVA", "text": "Mensaje destruido. La evidencia que conten\u00eda se perdi\u00f3."}
+    ],
+    "reactive_correct": [
+      {"speaker": "NOVA", "text": "\u00a1Descifrado! Otro mensaje recuperado para el expediente."}
     ],
     "success": [
-      {"speaker": "ANALISTA", "text": "\u00a1Descifrado! La nota revela coordenadas de una reuni\u00f3n secreta."},
-      {"speaker": "CONTROL", "text": "Buen trabajo. El cifrado C\u00e9sar es b\u00e1sico, pero fue el inicio de todo."}
+      {"speaker": "NOVA", "text": "Todos los mensajes del Archivista descifrados. Su confianza en C\u00e9sar fue su ca\u00edda."},
+      {"speaker": "NOVA", "text": "El Archivista confiaba en C\u00e9sar porque nadie m\u00e1s en Phantom Protocol sab\u00eda criptograf\u00eda. Ten\u00eda raz\u00f3n en que era oscuridad por oscuridad \u2014 pero 25 intentos y cualquier script lo rompe."},
+      {"speaker": "NOVA", "text": "El an\u00e1lisis de frecuencia existe desde el siglo IX. Un cifrado de 2000 a\u00f1os contra un ataque de 1200 a\u00f1os. Las matem\u00e1ticas siempre ganan."}
     ],
-    "error": [
-      {"speaker": "ANALISTA", "text": "No... ese desplazamiento no produce texto legible. Sigue intentando."}
-    ]
+    "hints": {
+      "hint_1": {"source": "POST-IT en el monitor", "text": "El viejo siempre usa n\u00fameros peque\u00f1os. Dec\u00eda que 'los n\u00fameros grandes son para los que no entienden la elegancia'. Sus shifts favoritos nunca pasan de 10.", "cost": "free"},
+      "hint_2": {"source": "DOCUMENTO en el escritorio", "text": "Informe interno de Phantom Protocol: 'El Archivista insiste en rotar sus claves entre 3 valores. Lo hemos visto usar 2, 5 y 7 en los \u00faltimos mensajes interceptados.'", "cost": "10s"},
+      "hint_3": {"source": "LLAMADA a CipherBureau", "text": "NOVA, nuestro equipo de criptoan\u00e1lisis dice que el shift actual es [VALOR]. Pero si usas esto, el fiscal va a cuestionar c\u00f3mo obtuviste la informaci\u00f3n.", "cost": "30pts + 15s"}
+    }
   },
   "base64": {
     "enter": [
-      {"speaker": "ANALISTA", "text": "Los archivos del servidor est\u00e1n codificados. No es cifrado real..."},
-      {"speaker": "ANALISTA", "text": "Base64 es solo codificaci\u00f3n. Usa la tabla de referencia y arrastra los bloques al orden correcto."}
+      {"speaker": "NOVA", "text": "Sala de servidores. El T\u00e9cnico de Comunicaciones trabajaba aqu\u00ed. Todo est\u00e1 impecablemente organizado."},
+      {"speaker": "NOVA", "text": "Los datos est\u00e1n codificados en Base64. No es cifrado real \u2014 es codificaci\u00f3n de transporte. Pero la transmisi\u00f3n lleg\u00f3 corrupta."},
+      {"speaker": "NOVA", "text": "El T\u00e9cnico dec\u00eda: 'No cifro, solo empaqueto. Nadie busca lo que no parece oculto.' Descuidado."}
+    ],
+    "round_1_intro": [
+      {"speaker": "NOVA", "text": "Primera transmisi\u00f3n corrupta. Hay caracteres inv\u00e1lidos mezclados en el string Base64."},
+      {"speaker": "NOVA", "text": "Los errores est\u00e1n marcados en rojo. Solo necesito reemplazarlos con caracteres v\u00e1lidos del alfabeto Base64."}
+    ],
+    "round_2_intro": [
+      {"speaker": "NOVA", "text": "M\u00e1s datos corruptos, pero esta vez los errores no est\u00e1n marcados."},
+      {"speaker": "NOVA", "text": "El texto decodificado muestra s\u00edmbolos extra\u00f1os donde hay errores. Eso me dice qu\u00e9 bloques de 4 caracteres revisar."}
+    ],
+    "round_3_intro": [
+      {"speaker": "NOVA", "text": "\u00a1El servidor est\u00e1 borrando datos! Los caracteres desaparecen cada 3 segundos."},
+      {"speaker": "NOVA", "text": "Seis errores sin marcar y sin tabla de referencia. Tengo que trabajar de memoria."}
+    ],
+    "reactive_wrong": [
+      {"speaker": "NOVA", "text": "Ese car\u00e1cter no es v\u00e1lido en Base64. Solo acepta A-Z, a-z, 0-9, + y /."}
+    ],
+    "reactive_correct": [
+      {"speaker": "NOVA", "text": "Correcto. El bloque decodifica limpio ahora."}
+    ],
+    "reactive_erasing": [
+      {"speaker": "NOVA", "text": "\u00a1Se est\u00e1n borrando los datos! Tengo que actuar r\u00e1pido."}
     ],
     "success": [
-      {"speaker": "ANALISTA", "text": "\u00a1Decodificado! El archivo contiene una lista de contactos."},
-      {"speaker": "CONTROL", "text": "Base64 nunca fue dise\u00f1ado para ocultar informaci\u00f3n. Solo para transportarla."}
+      {"speaker": "NOVA", "text": "Transmisi\u00f3n recuperada. El T\u00e9cnico confiaba en que 'codificar' era suficiente."},
+      {"speaker": "NOVA", "text": "Base64 convierte 3 bytes en 4 caracteres ASCII. No oculta nada \u2014 cualquiera con un decoder lo revierte en milisegundos."},
+      {"speaker": "NOVA", "text": "La lecci\u00f3n: codificaci\u00f3n NO es cifrado. Si puedes decodificar sin clave, no es seguridad. Es conveniencia."}
     ],
-    "error": [
-      {"speaker": "ANALISTA", "text": "Ese orden no produce texto v\u00e1lido. Consulta la tabla de referencia."}
-    ]
+    "hints": {
+      "hint_1": {"source": "MANUAL abierto en el rack", "text": "Manual de Base64: Los \u00fanicos caracteres v\u00e1lidos son A-Z (26), a-z (26), 0-9 (10), + y /. Total: 64 s\u00edmbolos. El = es padding al final.", "cost": "free"},
+      "hint_2": {"source": "LOG del T\u00e9cnico", "text": "Log de transmisi\u00f3n: 'Error en bloque 3. Los caracteres #, @ y ! no son Base64 v\u00e1lido. Nota: verificar que cada grupo de 4 decodifica a exactamente 3 bytes ASCII.'", "cost": "10s"},
+      "hint_3": {"source": "LLAMADA a CipherBureau", "text": "NOVA, el car\u00e1cter corrupto en la posici\u00f3n [X] deber\u00eda ser [Y]. Pero te recomiendo que aprendas a identificarlos t\u00fa misma.", "cost": "30pts + 15s"}
+    }
   },
   "hash": {
     "enter": [
-      {"speaker": "ANALISTA", "text": "Encontr\u00e9 la base de datos de contrase\u00f1as. Est\u00e1n guardadas como hashes."},
-      {"speaker": "ANALISTA", "text": "Tengo una terminal disponible. Usa el c\u00f3digo Python para calcular los hashes y encontrar coincidencias."}
+      {"speaker": "NOVA", "text": "Oficina del Sysadmin Paranoico. Tres monitores, todos con alertas de seguridad. Iron\u00eda pura."},
+      {"speaker": "NOVA", "text": "La base de datos de contrase\u00f1as est\u00e1 hasheada con SHA-256. Imposible de revertir... pero tengo una lista de candidatas."},
+      {"speaker": "NOVA", "text": "El Sysadmin sab\u00eda de seguridad pero confiaba en contrase\u00f1as d\u00e9biles de sus superiores. La rainbow table lo delata."}
+    ],
+    "round_1_intro": [
+      {"speaker": "NOVA", "text": "Primer hash objetivo. 5 contrase\u00f1as candidatas. Voy a hashear cada una y comparar."},
+      {"speaker": "NOVA", "text": "Puedo ver el hash completo de 64 caracteres. A esta velocidad, puedo verificar con calma."}
+    ],
+    "round_2_intro": [
+      {"speaker": "NOVA", "text": "Segundo hash, pero solo veo los primeros 8 caracteres. M\u00e1s candidatas esta vez."},
+      {"speaker": "NOVA", "text": "Cuidado con las colisiones parciales \u2014 dos hashes pueden coincidir en los primeros caracteres pero diferir despu\u00e9s."}
+    ],
+    "round_3_intro": [
+      {"speaker": "NOVA", "text": "\u00a1El Sysadmin est\u00e1 borrando logs remotamente! Las candidatas desaparecen cada 5 segundos."},
+      {"speaker": "NOVA", "text": "20 candidatas, 60 segundos. Y hay una trampa: 'passward' y 'password' parecen iguales pero sus hashes son completamente distintos."}
+    ],
+    "reactive_wrong": [
+      {"speaker": "NOVA", "text": "No coincide. Mismo algoritmo, distinto input, hash completamente diferente. As\u00ed funciona SHA-256."}
+    ],
+    "reactive_avalanche": [
+      {"speaker": "NOVA", "text": "\u00a1Mira eso! Un solo car\u00e1cter de diferencia y el hash es completamente distinto. Efecto avalancha."}
+    ],
+    "reactive_collision": [
+      {"speaker": "NOVA", "text": "Los primeros caracteres coinciden pero el resto no. Colisi\u00f3n parcial \u2014 necesito ver el hash completo."}
+    ],
+    "reactive_correct": [
+      {"speaker": "NOVA", "text": "\u00a1Coincidencia exacta! Contrase\u00f1a encontrada en la rainbow table."}
     ],
     "success": [
-      {"speaker": "ANALISTA", "text": "\u00a1Acceso conseguido! La contrase\u00f1a del director era predecible."},
-      {"speaker": "CONTROL", "text": "Las rainbow tables son poderosas contra contrase\u00f1as d\u00e9biles. Por eso el salting es vital."}
+      {"speaker": "NOVA", "text": "Acceso conseguido. El Sysadmin sab\u00eda que los hashes son irreversibles, pero olvid\u00f3 que las contrase\u00f1as d\u00e9biles est\u00e1n en cada diccionario."},
+      {"speaker": "NOVA", "text": "SHA-256 produce 256 bits \u2014 64 caracteres hex. Mismo input siempre da el mismo output. Irreversible por dise\u00f1o."},
+      {"speaker": "NOVA", "text": "Las rainbow tables y el efecto avalancha son las dos caras de la moneda. La primera rompe contrase\u00f1as d\u00e9biles. La segunda las protege si son fuertes."}
     ],
-    "error": [
-      {"speaker": "ANALISTA", "text": "Esa conexi\u00f3n no es correcta. Usa la terminal para verificar el hash."}
-    ],
+    "hints": {
+      "hint_1": {"source": "NOTA en la pizarra", "text": "Post-it del Sysadmin: 'Recordar a los directivos que cambien sus contrase\u00f1as. Siguen usando las del top 100 de RockYou. Irresponsables.'", "cost": "free"},
+      "hint_2": {"source": "LOG de accesos", "text": "Log: '03:42 - Acceso fallido con hash 5e884898... intent\u00f3 password. 03:43 - Acceso exitoso. Contrase\u00f1a cambiada a algo m\u00e1s \\\"tem\u00e1tico\\\".'", "cost": "10s"},
+      "hint_3": {"source": "LLAMADA a CipherBureau", "text": "El equipo de criptoan\u00e1lisis confirm\u00f3: la contrase\u00f1a est\u00e1 en el diccionario est\u00e1ndar. Busca algo relacionado con el nombre de la operaci\u00f3n.", "cost": "30pts + 15s"}
+    },
     "reverse_blocked": [
-      {"speaker": "ANALISTA", "text": "Los hashes son funciones de una sola v\u00eda. No puedes revertirlos."}
+      {"speaker": "NOVA", "text": "Los hashes son funciones de una sola v\u00eda. No puedo revertirlos \u2014 solo puedo comparar."}
     ]
   },
   "diffie_hellman": {
     "enter": [
-      {"speaker": "ANALISTA", "text": "Intercept\u00e9 una comunicaci\u00f3n entre dos agentes."},
-      {"speaker": "ANALISTA", "text": "Est\u00e1n intercambiando colores secretos para crear una clave compartida. Deduce la mezcla final."}
+      {"speaker": "NOVA", "text": "Canal de comunicaciones activo. Estoy viendo el intercambio en vivo."},
+      {"speaker": "NOVA", "text": "g y p son p\u00fablicos, los transmiten abiertamente. Lo que nunca viaja por el canal son los secretos a y b."},
+      {"speaker": "NOVA", "text": "El Coordinador General es el m\u00e1s sofisticado de Phantom Protocol. Tengo que calcular K antes de que terminen la negociaci\u00f3n."}
+    ],
+    "round_1_intro": [
+      {"speaker": "NOVA", "text": "Ronda de entrenamiento. Los par\u00e1metros son peque\u00f1os: g=5, p=23."},
+      {"speaker": "NOVA", "text": "Tengo que elegir mi secreto, calcular A = g^a mod p, y luego K = B^a mod p. Paso a paso."}
+    ],
+    "round_2_intro": [
+      {"speaker": "NOVA", "text": "N\u00fameros m\u00e1s grandes ahora: g=7, p=41. Las casillas intermedias desaparecieron."},
+      {"speaker": "NOVA", "text": "90 segundos. Tengo que calcular A y K por mi cuenta. La exponenciaci\u00f3n modular no es trivial."}
+    ],
+    "round_3_intro": [
+      {"speaker": "NOVA", "text": "\u00a1Alerta! Los valores del canal no coinciden con la firma de CipherBureau."},
+      {"speaker": "NOVA", "text": "Posible ataque Man-in-the-Middle. Tengo que verificar los hashes antes de confiar en estos valores. 45 segundos."}
+    ],
+    "reactive_wrong_a": [
+      {"speaker": "NOVA", "text": "El c\u00e1lculo de A no cuadra. \u00bfEstoy aplicando el mod correctamente?"}
+    ],
+    "reactive_wrong_k": [
+      {"speaker": "NOVA", "text": "K no coincide. Revisa: K = B elevado a tu secreto, m\u00f3dulo p."}
+    ],
+    "reactive_time_warning": [
+      {"speaker": "NOVA", "text": "30 segundos. El canal se cierra."}
+    ],
+    "reactive_mitm_detected": [
+      {"speaker": "NOVA", "text": "\u00a1Ah\u00ed est\u00e1! Los valores no coinciden con la firma de CipherBureau. Hay un interceptor en el canal."}
+    ],
+    "reactive_mitm_missed": [
+      {"speaker": "NOVA", "text": "Canal comprometido. El interceptor tiene nuestra clave. Operaci\u00f3n en riesgo."}
     ],
     "success": [
-      {"speaker": "ANALISTA", "text": "\u00a1Clave interceptada! Ahora puedo descifrar toda la comunicaci\u00f3n."},
-      {"speaker": "CONTROL", "text": "Diffie-Hellman es la base de la criptograf\u00eda moderna. HTTPS, SSH, Signal... todo lo usa."}
+      {"speaker": "NOVA", "text": "El Coordinador General eligi\u00f3 Diffie-Hellman porque es el \u00fanico m\u00e9todo que permite crear un secreto compartido sin haberlo acordado antes."},
+      {"speaker": "NOVA", "text": "Pero cometi\u00f3 el error cl\u00e1sico: no autentic\u00f3 los valores p\u00fablicos. Sin un certificado que firme A y B, cualquiera en el canal puede sustituirlos."},
+      {"speaker": "NOVA", "text": "Eso es exactamente lo que HTTPS resolvi\u00f3 en 1994 \u2014 DH m\u00e1s TLS m\u00e1s certificados X.509. El protocolo es s\u00f3lido; la implementaci\u00f3n lo mat\u00f3."}
     ],
-    "error": [
-      {"speaker": "ANALISTA", "text": "La clave no coincide. Observa la met\u00e1fora de colores y recalcula."}
-    ]
+    "hints": {
+      "hint_1": {"source": "MANUAL en el escritorio", "text": "Exponenciaci\u00f3n modular: para calcular g^a mod p, multiplica g por s\u00ed mismo 'a' veces y aplica mod en cada paso para mantener los n\u00fameros manejables.", "cost": "free"},
+      "hint_2": {"source": "AUDIO LOG del t\u00e9cnico", "text": "El truco del mod: puedes aplicarlo en cada multiplicaci\u00f3n intermedia. 5^6 mod 23: 5^1=5, 5^2=25\u21922, 5^3=10, 5^4=50\u21924, 5^5=20, 5^6=100\u21928. Resultado: 8.", "cost": "10s"},
+      "hint_3": {"source": "LLAMADA a base", "text": "Te doy los valores intermedios del c\u00e1lculo actual. Pero esto va al expediente, NOVA.", "cost": "30pts + 30s"}
+    }
   },
   "ending": {
     "complete": [
-      {"speaker": "CONTROL", "text": "Misi\u00f3n completada, agente. Toda la evidencia ha sido descifrada."},
-      {"speaker": "CONTROL", "text": "Has demostrado dominio sobre los fundamentos de la criptograf\u00eda."},
-      {"speaker": "CONTROL", "text": "C\u00e9sar, Base64, SHA-256, Diffie-Hellman... las capas de la seguridad digital."},
-      {"speaker": "CONTROL", "text": "DEADLOCK ha sido neutralizado. Buen trabajo."}
+      {"speaker": "CONTROL", "text": "Misi\u00f3n DEADLOCK completada. Toda la evidencia de Phantom Protocol ha sido descifrada."},
+      {"speaker": "NOVA", "text": "Cuatro especialistas, cuatro m\u00e9todos, cuatro debilidades. Cada capa de cifrado fue tan fuerte como la persona que la implement\u00f3."},
+      {"speaker": "CONTROL", "text": "C\u00e9sar, Base64, SHA-256, Diffie-Hellman... has atravesado 2000 a\u00f1os de criptograf\u00eda en una noche."},
+      {"speaker": "NOVA", "text": "La seguridad no es un algoritmo. Es un sistema completo. Phantom Protocol ten\u00eda buenos algoritmos pero malas pr\u00e1cticas."},
+      {"speaker": "CONTROL", "text": "DEADLOCK ha sido neutralizado. Buen trabajo, agente NOVA."}
     ]
   }
 }
