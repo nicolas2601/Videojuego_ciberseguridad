@@ -1,45 +1,144 @@
 {
   "caesar": {
-    "cipher_text": "PHHW PH",
-    "correct_shift": 3,
-    "plain_text": "MEET ME",
-    "hints": [
-      "El cifrado C\u00e9sar desplaza cada letra un n\u00famero fijo en el alfabeto.",
-      "El texto descifrado deber\u00eda ser una frase corta en ingl\u00e9s con sentido.",
-      "El desplazamiento correcto es un n\u00famero entre 1 y 5."
-    ],
-    "debriefing": "C\u00e9sar invent\u00f3 este cifrado en el siglo I a.C. Hoy es trivialmente rompible \u2014 solo 25 combinaciones posibles. La rueda que acabas de usar se llama 'disco de Alberti' y fue la primera m\u00e1quina de cifrado port\u00e1til de la historia."
+    "round_1": {
+      "messages": [
+        {"plain": "MEET ME", "shift": 3},
+        {"plain": "DROP IT", "shift": 3},
+        {"plain": "RUN NOW", "shift": 3}
+      ],
+      "shift_visible": true,
+      "timer_per_msg": 20,
+      "show_frequency": false
+    },
+    "round_2": {
+      "messages": [
+        {"plain": "SAFE HOUSE", "shift": 5},
+        {"plain": "CODE RED", "shift": 2},
+        {"plain": "ABORT PLAN", "shift": 7},
+        {"plain": "SEND BACKUP", "shift": 4}
+      ],
+      "shift_visible": false,
+      "timer_per_msg": 15,
+      "show_frequency": true
+    },
+    "round_3": {
+      "messages": [
+        {"plain": "TARGET NORTH", "shift": 6},
+        {"plain": "BURN FILES", "shift": 3},
+        {"plain": "EXIT SOUTH", "shift": 9}
+      ],
+      "shift_visible": false,
+      "timer_per_msg": 30,
+      "show_frequency": false,
+      "simultaneous": true
+    },
+    "message_pool": [
+      {"plain": "ATTACK DAWN", "shift_range": [2, 10]},
+      {"plain": "MOVE WEST", "shift_range": [2, 10]},
+      {"plain": "HOLD FIRE", "shift_range": [2, 10]},
+      {"plain": "OPEN GATE", "shift_range": [2, 10]},
+      {"plain": "SEND HELP", "shift_range": [2, 10]},
+      {"plain": "TAKE COVER", "shift_range": [2, 10]},
+      {"plain": "FALL BACK", "shift_range": [2, 10]},
+      {"plain": "GO DARK", "shift_range": [2, 10]},
+      {"plain": "LOCK DOWN", "shift_range": [2, 10]},
+      {"plain": "COPY THAT", "shift_range": [2, 10]}
+    ]
   },
   "base64": {
-    "encoded": "SGVsbG8gV29ybGQh",
-    "blocks": ["SGVs", "bG8g", "V29y", "bGQh"],
-    "decoded": "Hello World!",
-    "hints": [
-      "Base64 divide los datos en grupos de 6 bits, codificados como caracteres.",
-      "Cada bloque de 4 chars Base64 representa exactamente 3 bytes.",
-      "El orden correcto es el mismo que en el string original del servidor."
-    ],
-    "debriefing": "Base64 convierte datos binarios en texto ASCII transportable. Se invent\u00f3 para enviar archivos por email (que solo soportaba texto). NO es cifrado \u2014 cualquiera puede decodificarlo. El padding '=' indica bytes faltantes en el \u00faltimo bloque."
+    "valid_chars": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=",
+    "invalid_chars": "#@!$%&*?{}[]<>~",
+    "blocks": ["RGVh", "ZGxv", "Y2s=", ""],
+    "encoded": "RGVhZGxvY2s=",
+    "decoded": "Deadlock",
+    "round_1": {
+      "original": "U2VjcmV0",
+      "decoded": "Secret",
+      "num_errors": 2,
+      "errors_highlighted": true,
+      "show_reference": true,
+      "timer": 0
+    },
+    "round_2": {
+      "original": "UGhhbnRvbQ==",
+      "decoded": "Phantom",
+      "num_errors": 4,
+      "errors_highlighted": false,
+      "show_reference": true,
+      "timer": 0
+    },
+    "round_3": {
+      "original": "RGVhZGxvY2s=",
+      "decoded": "Deadlock",
+      "num_errors": 6,
+      "errors_highlighted": false,
+      "show_reference": false,
+      "timer": 3,
+      "erase_interval": 3
+    },
+    "message_pool": [
+      {"original": "Tm92YQ==", "decoded": "Nova"},
+      {"original": "Q2lwaGVy", "decoded": "Cipher"},
+      {"original": "SGFja2Vy", "decoded": "Hacker"},
+      {"original": "QnVyZWF1", "decoded": "Bureau"},
+      {"original": "UHJvdG9jb2w=", "decoded": "Protocol"},
+      {"original": "QWdlbnQ=", "decoded": "Agent"},
+      {"original": "RXZpZGVuY2U=", "decoded": "Evidence"},
+      {"original": "U2VydmVy", "decoded": "Server"}
+    ]
   },
   "hash": {
-    "candidates": ["password", "123456", "qwerty", "letmein", "deadlock"],
-    "target_word": "deadlock",
-    "hints": [
-      "Los hashes son funciones de una sola v\u00eda \u2014 no puedes revertirlos.",
-      "Calcula el SHA-256 de cada candidato y compara con los hashes del archivo.",
-      "La contrase\u00f1a del director es el nombre de la operaci\u00f3n."
-    ],
-    "debriefing": "Un hash criptogr\u00e1fico transforma cualquier dato en una huella digital de tama\u00f1o fijo. SHA-256 es est\u00e1ndar para almacenar contrase\u00f1as. Las 'rainbow tables' como la que usaste existen en el mundo real \u2014 por eso las contrase\u00f1as fuertes y el 'salting' son esenciales."
+    "round_1": {
+      "target": "deadlock",
+      "candidates": ["password", "123456", "qwerty", "letmein", "deadlock"],
+      "hash_length": 64,
+      "speed": "slow",
+      "timer": 0
+    },
+    "round_2": {
+      "target": "phantom",
+      "candidates": ["admin", "root", "phantom", "passw0rd", "dragon", "master", "shadow", "monkey", "1234567", "superman", "hunter2", "trustno1"],
+      "hash_length": 8,
+      "speed": "medium",
+      "timer": 0,
+      "partial_collisions": true
+    },
+    "round_3": {
+      "target": "protocol",
+      "candidates": ["password", "passward", "protocol", "protcol", "letmein", "welcome", "sunshine", "princess", "football", "charlie", "access", "master", "dragon", "qwerty", "login", "admin", "abc123", "monkey", "shadow", "654321"],
+      "hash_length": 16,
+      "speed": "fast",
+      "timer": 60,
+      "erase_interval": 5,
+      "show_avalanche": ["password", "passward"]
+    },
+    "candidate_pool": [
+      "cipher", "nova", "bureau", "agent", "target",
+      "secret", "crypto", "encode", "decode", "attack",
+      "defend", "breach", "access", "server", "system"
+    ]
   },
   "diffie_hellman": {
-    "g": 5,
-    "p": 23,
-    "b_secret": 15,
-    "hints": [
-      "A = g elevado a tu n\u00famero secreto, m\u00f3dulo p.",
-      "Recibir\u00e1s B del otro lado. Tu clave compartida es B^a mod p.",
-      "Prueba con a=6. Calcula A=5^6 mod 23, luego K=B^6 mod 23."
-    ],
-    "debriefing": "Diffie-Hellman (1976) permiti\u00f3 por primera vez a dos personas crear una clave secreta compartida sobre un canal p\u00fablico inseguro. Es la base de HTTPS, SSH y Signal. El problema del logaritmo discreto hace que calcular 'a' a partir de A = g^a mod p sea computacionalmente inviable con n\u00fameros reales de 2048+ bits."
+    "round_1": {
+      "g": 5, "p": 23,
+      "b_secret": 15,
+      "show_intermediate": true,
+      "timer": 0
+    },
+    "round_2": {
+      "g": 7, "p": 41,
+      "b_secret": 12,
+      "show_intermediate": false,
+      "timer": 90,
+      "wrong_penalty": 20
+    },
+    "round_3": {
+      "g": 3, "p": 29,
+      "b_secret": 11,
+      "mitm": true,
+      "mitm_manipulated": "B",
+      "timer": 45,
+      "show_intermediate": false
+    }
   }
 }

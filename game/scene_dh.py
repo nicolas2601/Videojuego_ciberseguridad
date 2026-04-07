@@ -1,605 +1,475 @@
-import pygame
-import math
+"""Diffie-Hellman signal-interceptor puzzle -- 3 rounds of increasing difficulty.
+Round 1: guided worksheet, Round 2: timed no-guide, Round 3: MITM detection."""
+import pygame, random, math
 from game.constants import (WIDTH, HEIGHT, C_BG, C_BG2, C_BG3, C_BORDER, C_TEXT_PRI,
-    C_TEXT_SEC, C_TEXT_HINT, C_ACCENT, C_GREEN, C_RED, C_DH, C_PANEL, C_WHITE, C_AMBER)
+    C_TEXT_SEC, C_TEXT_HINT, C_ACCENT, C_GREEN, C_RED, C_NEON, C_WHITE, C_PANEL,
+    C_DH, C_AMBER, C_TERM_BG, C_TERM_GREEN, HINTS_CONFIG,
+    DIFFICULTY_DUMMY, DIFFICULTY_MID, DIFFICULTY_SENIOR, DIFFICULTY_NOOB)
+from game.ui.draw_assets import (draw_server_rack, draw_monitor,
+    draw_office_floor, draw_wall, draw_text_box, word_wrap)
 from game.ui.dialogue import DialogueBox
 from game.ui.hud import HUD
-from game.ui.tile_renderer import get_separate_sprite, draw_floor
 from crypto.dh_utils import dh_public, dh_shared_key
 
-
-# DH parameters
-_G = 5
-_P = 23
-_B_SECRET = 15
+# ── Legacy exports for test compatibility ──
+import colorsys as _colorsys
+_G, _P, _B_SECRET = 5, 23, 15
 _B_PUBLIC = dh_public(_G, _P, _B_SECRET)
+_BASE_COLOR = (230, 210, 50)
 
-# Layout constants
-_COL_LEFT_X = 40
-_COL_CENTER_X = 440
-_COL_RIGHT_X = 860
-_COL_W = 380
-_COL_TOP = 80
-_SLIDER_Y = 260
-_SLIDER_W = 300
-_SLIDER_H = 12
-_HANDLE_W = 18
-_HANDLE_H = 28
-_BUTTON_W = 280
-_BUTTON_H = 48
+def _number_to_color(n, p):
+    h = n / p; r, g, b = _colorsys.hsv_to_rgb(h, 0.85, 0.95)
+    return (int(r * 255), int(g * 255), int(b * 255))
 
+def _blend_colors(c1, c2, ratio=0.5):
+    return tuple(int(c1[i] * ratio + c2[i] * (1 - ratio)) for i in range(3))
 
+# ── Round configs ──
+_ROUNDS = [
+    {"g": 5, "p": 23, "b_secret": 15, "timer": 0, "guided": True, "mitm": False},
+    {"g": 7, "p": 41, "b_secret": 12, "timer": 90, "guided": False, "mitm": False},
+    {"g": 3, "p": 29, "b_secret": 9, "timer": 45, "guided": False, "mitm": True},
+]
+
+def _dighash(val, p):
+    return sum(int(d) for d in str(abs(val))) % p
+
+# ── UI helpers ──
+def _ctxt(s, f, txt, x, w, y, c):
+    t = f.render(txt, True, c); s.blit(t, (x + (w - t.get_width()) // 2, y))
+
+def _panel(surface, r, border_col):
+    bg = pygame.Surface((r.w, r.h), pygame.SRCALPHA); bg.fill((12, 14, 22, 210))
+    surface.blit(bg, r.topleft); pygame.draw.rect(surface, border_col, r, 1, border_radius=4)
+
+def _btn(surface, rect, text, font, col, sel=False):
+    hover = rect.collidepoint(pygame.mouse.get_pos())
+    bc = col if (hover or sel) else C_BORDER
+    pygame.draw.rect(surface, C_BG3, rect, border_radius=3)
+    pygame.draw.rect(surface, bc, rect, 2 if sel else 1, border_radius=3)
+    t = font.render(text, True, C_TEXT_PRI if not sel else col)
+    surface.blit(t, (rect.x + (rect.w - t.get_width()) // 2, rect.y + (rect.h - t.get_height()) // 2))
+
+# ── Calculator ──
+class _Calculator:
+    def __init__(self, x, y, w, h):
+        self.rect = pygame.Rect(x, y, w, h)
+        self.display = ""; self.result = None
+        self.fd = pygame.font.SysFont("monospace", 18, bold=True)
+        self.fb = pygame.font.SysFont("monospace", 16, bold=True)
+        self._keys = [["7","8","9","^"],["4","5","6","mod"],
+                      ["1","2","3","DEL"],["0","C",".","="]]
+        pad, dh, cols, rows = 4, 34, 4, 4
+        bw = (w - pad * (cols + 1)) // cols; bh = (h - dh - pad * (rows + 2)) // rows
+        self.dr = pygame.Rect(x + pad, y + pad, w - pad * 2, dh)
+        self.br = {}
+        top = y + dh + pad * 2
+        for r, row in enumerate(self._keys):
+            for c, lb in enumerate(row):
+                self.br[lb] = pygame.Rect(x + pad + c * (bw + pad), top + r * (bh + pad), bw, bh)
+
+    def press(self, key):
+        if key == "C": self.display = ""; self.result = None
+        elif key == "DEL": self.display = self.display[:-1]
+        elif key == "=": self._eval()
+        else: self.display += str(key)
+
+    def _eval(self):
+        e = self.display.replace(" ", "")
+        try:
+            if "^" in e and "mod" in e:
+                a, rest = e.split("^", 1); b, m = rest.split("mod", 1)
+                self.result = pow(int(a), int(b), int(m))
+            else:
+                self.result = int(e)
+        except Exception:
+            self.result = None; return
+        self.display = str(self.result)
+
+    def handle_click(self, pos):
+        for lb, r in self.br.items():
+            if r.collidepoint(pos): self.press(lb); return True
+        return False
+
+    def draw(self, surface):
+        _panel(surface, self.rect, C_DH)
+        pygame.draw.rect(surface, C_TERM_BG, self.dr, border_radius=3)
+        pygame.draw.rect(surface, C_BORDER, self.dr, 1, border_radius=3)
+        t = self.fd.render(self.display[-28:] or "0", True, C_TERM_GREEN)
+        surface.blit(t, (self.dr.x + 6, self.dr.y + (self.dr.h - t.get_height()) // 2))
+        for lb, r in self.br.items():
+            hov = r.collidepoint(pygame.mouse.get_pos())
+            pygame.draw.rect(surface, C_ACCENT if hov else C_BG3, r, border_radius=3)
+            pygame.draw.rect(surface, C_BORDER, r, 1, border_radius=3)
+            tc = C_DH if lb in ("^", "mod", "=") else C_TEXT_PRI
+            ts = self.fb.render(lb, True, tc)
+            surface.blit(ts, (r.x + (r.w - ts.get_width()) // 2, r.y + (r.h - ts.get_height()) // 2))
+
+# ── Step (field) ──
+class _Step:
+    def __init__(self, label, x, y, w, expected_fn, rng=None):
+        self.label = label; self.rect = pygame.Rect(x, y, w, 28)
+        self.fn = expected_fn; self.rng = rng
+        self.value = ""; self.locked = False; self.correct = None
+        self.active = False; self.blink = 0.0
+
+    def confirm(self):
+        if self.locked or not self.value.strip(): return None
+        try: v = int(self.value)
+        except ValueError: self.correct = False; return False
+        if self.rng and not (self.rng[0] <= v <= self.rng[1]):
+            self.correct = False; return False
+        self.correct = self.fn(v)
+        if self.correct: self.locked = True
+        else: self.value = ""
+        return self.correct
+
+    def draw(self, surface, font):
+        bc = C_GREEN if (self.locked and self.correct) else (
+             C_RED if self.correct is False else (C_DH if self.active else C_BORDER))
+        pygame.draw.rect(surface, C_TERM_BG, self.rect, border_radius=2)
+        pygame.draw.rect(surface, bc, self.rect, 2 if self.active else 1, border_radius=2)
+        ts = font.render(self.value, True, C_TEXT_PRI)
+        surface.blit(ts, (self.rect.x + 4, self.rect.y + 5))
+        if self.active and not self.locked:
+            self.blink += 0.06
+            if math.sin(self.blink * 4) > 0:
+                cx = self.rect.x + 4 + ts.get_width() + 1
+                pygame.draw.line(surface, C_DH, (cx, self.rect.y + 4), (cx, self.rect.y + 24))
+
+# ── Main scene ──
 class DHScene:
     def __init__(self, manager):
         self.manager = manager
-
-        # Fonts
-        self.font_title = pygame.font.SysFont("monospace", 16, bold=True)
-        self.font_label = pygame.font.SysFont("monospace", 14, bold=True)
-        self.font_value = pygame.font.SysFont("monospace", 28, bold=True)
-        self.font_small = pygame.font.SysFont("monospace", 13)
-        self.font_math = pygame.font.SysFont("monospace", 15)
-        self.font_edu = pygame.font.SysFont("monospace", 12)
-        self.font_btn = pygame.font.SysFont("monospace", 16, bold=True)
-        self.font_big = pygame.font.SysFont("monospace", 22, bold=True)
-
-        # State
-        self.secret_a = 7
-        self.dragging_slider = False
-        self.phase = "interact"  # interact -> success
-        self.confirmed = False
-        self.hints_used = 0
-        self.start_time = 0.0
-        self.elapsed = 0.0
-
-        # Animation timers
-        self.arrow_left_timer = 0.0
-        self.arrow_right_timer = 0.0
-        self.arrow_left_active = False
-        self.arrow_right_active = True
-        self.transmit_blink = 0.0
-        self.pulse_timer = 0.0
-
-        # Success animation
-        self.success_timer = 0.0
-        self.debriefing_shown = False
-
-        # Slider rect
-        self.slider_x = _COL_LEFT_X + (_COL_W - _SLIDER_W) // 2
-        self.slider_rect = pygame.Rect(self.slider_x, _SLIDER_Y, _SLIDER_W, _SLIDER_H)
-        self.handle_rect = pygame.Rect(0, 0, _HANDLE_W, _HANDLE_H)
-        self._update_handle_pos()
-
-        # Confirm button
-        self.btn_rect = pygame.Rect(
-            WIDTH // 2 - _BUTTON_W // 2, 620,
-            _BUTTON_W, _BUTTON_H
-        )
-        self.btn_hovered = False
-
-        # Back button
-        self.back_rect = pygame.Rect(20, HEIGHT - 44, 140, 32)
-        self.back_hovered = False
-
-        # Hint button
-        self.hint_rect = pygame.Rect(WIDTH - 160, HEIGHT - 44, 140, 32)
-        self.hint_hovered = False
-
-        # Pre-render floor
-        self.floor_surf = pygame.Surface((WIDTH, HEIGHT))
-        draw_floor(self.floor_surf, tile_col=0, tile_row=0)
-        dark = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        dark.fill((0, 0, 0, 180))
-        self.floor_surf.blit(dark, (0, 0))
-
-        # HUD
+        self.diff = getattr(manager, "difficulty", DIFFICULTY_MID)
+        self.hcfg = HINTS_CONFIG.get(self.diff, HINTS_CONFIG[DIFFICULTY_MID])
+        self.ft = pygame.font.SysFont("monospace", 15, bold=True)
+        self.fl = pygame.font.SysFont("monospace", 13, bold=True)
+        self.fv = pygame.font.SysFont("monospace", 14)
+        self.ff = pygame.font.SysFont("monospace", 14, bold=True)
+        self.fi = pygame.font.SysFont("monospace", 12)
+        self.fb = pygame.font.SysFont("monospace", 20, bold=True)
         self.hud = HUD()
-        self.hud.set_info(
-            scene_name="ESCENA 04 -- SALA DE COMUNICACIONES",
-            layer_text="CAPA 4/4 -- DIFFIE-HELLMAN"
-        )
-
-        # Dialogue
+        self.hud.set_info(scene_name="ESCENA 04 -- SALA DE COMUNICACIONES", layer_text="RONDA 1/3")
         self.dialogue = DialogueBox()
-        enter_msgs = manager.dialogues.get("diffie_hellman", {}).get("enter", [])
-        if enter_msgs:
-            self.dialogue.show(enter_msgs)
+        self.calc = _Calculator(WIDTH // 2 - 170, 490, 340, 200)
+        self.round_idx = 0; self.score = 0; self.errors = 0; self.phase = "dialogue"
+        self.timer = 0.0; self.timer_max = 0.0; self.steps = []; self.afi = -1
+        self.nova_msg = ""; self.nova_timer = 0.0; self.anim_t = 0.0
+        self.mitm_answer = None; self.mitm_which = None
+        self.mitm_is_attack = False; self.mitm_signed_hash = 0; self._pa = 0
+        self._cfg = _ROUNDS[0]; self._g = 5; self._p = 23; self._B = 0; self._Br = 0
+        self.hints_used = 0; self.free_left = self.hcfg["free_hints"]
+        self.back_rect = pygame.Rect(20, HEIGHT - 40, 120, 30)
+        self.conf_rect = pygame.Rect(0, 0, 90, 24)
+        self.btn_si = pygame.Rect(970, 370, 60, 26); self.btn_no = pygame.Rect(1040, 370, 60, 26)
+        self.btn_a = pygame.Rect(970, 410, 60, 26); self.btn_b = pygame.Rect(1040, 410, 60, 26)
+        self.btn_mc = pygame.Rect(970, 445, 130, 26)
+        self.hint_rects = [pygame.Rect(940, 300 + i * 32, 130, 26) for i in range(3)]
+        self.hint_states = [False, False, False]
+        msgs = manager.dialogues.get("diffie_hellman", {}).get("enter", [])
+        if msgs: self.dialogue.show(msgs, on_complete=self._intro_round)
+        else: self._intro_round()
 
-        # Load optional decoration
-        self.decor_sprites = []
-        for name, scale, x, y in [
-            ("Sprite-0005.png", 2, 80, 500),
-            ("Sprite-0022.png", 2, 1080, 500),
-        ]:
-            try:
-                img = get_separate_sprite(name, scale=scale)
-                self.decor_sprites.append((img, x, y))
-            except Exception:
-                pass
+    def _intro_round(self):
+        key = f"round_{self.round_idx + 1}_intro"
+        msgs = self.manager.dialogues.get("diffie_hellman", {}).get(key, [])
+        if msgs: self.dialogue.show(msgs, on_complete=self._start_round)
+        else: self._start_round()
 
-    # ------------------------------------------------------------------
-    # Computed DH values
-    # ------------------------------------------------------------------
+    def _start_round(self):
+        cfg = _ROUNDS[self.round_idx]
+        g, p, bs = cfg["g"], cfg["p"], cfg["b_secret"]
+        B_real = dh_public(g, p, bs)
+        self.timer_max = cfg["timer"]; self.timer = float(self.timer_max)
+        self.nova_msg = ""; self.mitm_answer = None; self.mitm_which = None; self._pa = 0
+        self.hint_states = [False, False, False]
+        if cfg["mitm"]:
+            self.mitm_is_attack = random.random() < 0.65
+            if self.mitm_is_attack:
+                fs = random.randint(2, p - 2)
+                while fs == bs: fs = random.randint(2, p - 2)
+                B_shown = dh_public(g, p, fs)
+            else: B_shown = B_real
+            self.mitm_signed_hash = _dighash(B_real, p)
+        else: B_shown = B_real; self.mitm_is_attack = False
+        self._cfg, self._g, self._p, self._B, self._Br = cfg, g, p, B_shown, B_real
+        # Build steps in the terminal panel area
+        tx, fw = 530, 100
+        self.steps = [
+            _Step("a", tx, 130, fw, lambda v: 2 <= v <= 20, (2, 20)),
+            _Step("A", tx, 190, fw, lambda v: v == pow(g, self._ga(), p)),
+            _Step("K", tx, 250, fw, lambda v: v == pow(self._B, self._ga(), p)),
+        ]
+        self.afi = 0
+        if self.steps: self.steps[0].active = True
+        self.phase = "play"
+        self.hud.set_info(scene_name="ESCENA 04 -- SALA DE COMUNICACIONES",
+                          layer_text=f"RONDA {self.round_idx + 1}/3")
 
-    @property
-    def a_public(self):
-        return dh_public(_G, _P, self.secret_a)
+    def _ga(self):
+        for s in self.steps:
+            if s.label == "a" and s.locked:
+                return int(s.value)
+        return self._pa
 
-    @property
-    def shared_key_player(self):
-        return dh_shared_key(_B_PUBLIC, _P, self.secret_a)
-
-    @property
-    def shared_key_real(self):
-        return dh_shared_key(self.a_public, _P, _B_SECRET)
-
-    # ------------------------------------------------------------------
-    # Slider helpers
-    # ------------------------------------------------------------------
-
-    def _update_handle_pos(self):
-        t = (self.secret_a - 1) / 19.0
-        hx = self.slider_x + int(t * (_SLIDER_W - _HANDLE_W))
-        hy = _SLIDER_Y + _SLIDER_H // 2 - _HANDLE_H // 2
-        self.handle_rect.topleft = (hx, hy)
-
-    def _value_from_mouse(self, mx):
-        rel = mx - self.slider_x - _HANDLE_W // 2
-        usable = _SLIDER_W - _HANDLE_W
-        t = max(0.0, min(1.0, rel / usable))
-        return int(round(t * 19)) + 1
-
-    # ------------------------------------------------------------------
-    # Events
-    # ------------------------------------------------------------------
-
+    # ── Events ──
     def handle_event(self, event):
-        if self.dialogue.active:
-            self.dialogue.handle_event(event)
-            return
-
-        if self.phase == "success":
-            if event.type == pygame.MOUSEMOTION:
-                self.back_hovered = self.back_rect.collidepoint(event.pos)
-            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+        if self.dialogue.active: self.dialogue.handle_event(event); return
+        if self.phase == "finished":
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if self.back_rect.collidepoint(event.pos):
                     self.manager.change_scene("hub")
             return
-
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            if self.handle_rect.inflate(8, 8).collidepoint(event.pos):
-                self.dragging_slider = True
-            elif self.btn_rect.collidepoint(event.pos):
-                self._confirm()
-            elif self.back_rect.collidepoint(event.pos):
-                self.manager.change_scene("hub")
-            elif self.hint_rect.collidepoint(event.pos):
-                self._show_hint()
+            p = event.pos
+            if self.back_rect.collidepoint(p): self.manager.change_scene("hub"); return
+            if self.calc.handle_click(p): return
+            # Click on step -> transfer calc result
+            for i, s in enumerate(self.steps):
+                if s.rect.collidepoint(p) and not s.locked:
+                    self._setact(i)
+                    if self.calc.result is not None: s.value = str(self.calc.result)
+                    return
+            if self.conf_rect.collidepoint(p): self._cfld(); return
+            # Hint buttons
+            for i, hr in enumerate(self.hint_rects):
+                if hr.collidepoint(p) and self.phase == "play":
+                    self._use_hint(i); return
+            # MITM buttons
+            if self._cfg.get("mitm") and self.phase == "play":
+                if self.btn_si.collidepoint(p): self.mitm_answer = "SI"
+                elif self.btn_no.collidepoint(p): self.mitm_answer = "NO"
+                elif self.btn_a.collidepoint(p): self.mitm_which = "A"
+                elif self.btn_b.collidepoint(p): self.mitm_which = "B"
+                elif self.btn_mc.collidepoint(p): self._cmitm()
+        elif event.type == pygame.KEYDOWN and self.phase == "play":
+            if self.afi < 0 or self.afi >= len(self.steps): return
+            s = self.steps[self.afi]
+            if s.locked: return
+            if event.key == pygame.K_RETURN: self._cfld()
+            elif event.key == pygame.K_BACKSPACE: s.value = s.value[:-1]
+            elif event.key == pygame.K_TAB: self._adv()
+            elif event.unicode and event.unicode in "0123456789" and len(s.value) < 8:
+                s.value += event.unicode
 
-        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
-            self.dragging_slider = False
+    def _setact(self, i):
+        for j, s in enumerate(self.steps): s.active = (j == i)
+        self.afi = i
 
-        elif event.type == pygame.MOUSEMOTION:
-            if self.dragging_slider:
-                old_a = self.secret_a
-                self.secret_a = self._value_from_mouse(event.pos[0])
-                self._update_handle_pos()
-                if self.secret_a != old_a:
-                    self.arrow_left_active = True
-                    self.arrow_left_timer = 0.0
-            self.btn_hovered = self.btn_rect.collidepoint(event.pos)
-            self.back_hovered = self.back_rect.collidepoint(event.pos)
-            self.hint_hovered = self.hint_rect.collidepoint(event.pos)
+    def _cfld(self):
+        if self.afi < 0 or self.afi >= len(self.steps): return
+        s = self.steps[self.afi]
+        if s.locked: self._adv(); return
+        r = s.confirm()
+        if r is True:
+            self.score += 15
+            if s.label == "a": self._pa = int(s.value)
+            self._adv(); self._chk()
+        elif r is False:
+            self.score = max(0, self.score - 5); self.errors += 1
+            if self.timer_max > 0: self.timer = max(0, self.timer - 20)
 
-    def _confirm(self):
-        if self.shared_key_player == self.shared_key_real:
-            self.phase = "success"
-            self.success_timer = 0.0
-            score = self._calculate_score()
-            self.manager.complete_puzzle("diffie_hellman", score)
-            msgs = self.manager.dialogues.get("diffie_hellman", {}).get("success", [])
-            if msgs:
-                self.dialogue.show(msgs)
+    def _adv(self):
+        for i in range(self.afi + 1, len(self.steps)):
+            if not self.steps[i].locked: self._setact(i); return
+
+    def _use_hint(self, idx):
+        if self.hint_states[idx]: return
+        if self.free_left <= 0:
+            self.score = max(0, self.score - 10)
         else:
-            # Should not happen with correct DH math, but safety fallback
-            msgs = self.manager.dialogues.get("diffie_hellman", {}).get("error", [])
-            if msgs:
-                self.dialogue.show(msgs)
+            self.free_left -= 1
+        self.hint_states[idx] = True; self.hints_used += 1
+        hints_data = self.manager.dialogues.get("diffie_hellman", {}).get("hints", {})
+        hint = hints_data.get(f"hint_{idx + 1}", None)
+        if hint:
+            self.dialogue.show([{"speaker": hint.get("source", "NOVA"), "text": hint.get("text", "")}])
+        else:
+            fallback = ["Elige un secreto a entre 2 y 20.",
+                        "A = g^a mod p. Usa la calculadora.",
+                        "K = B^a mod p. B esta en el canal."]
+            self.nova_msg = fallback[idx]; self.nova_timer = 3.0
 
-    def _show_hint(self):
-        self.hints_used += 1
-        hint_msgs = [
-            {"speaker": "CONTROL", "text": "Cualquier valor de 'a' funciona. DH siempre produce la misma clave compartida."},
-            {"speaker": "CONTROL", "text": "Lo importante: ni 'a' ni 'b' viajan por el canal. Solo A y B publicos."},
-        ]
-        self.dialogue.show(hint_msgs)
+    def _chk(self):
+        if all(s.locked for s in self.steps):
+            if self._cfg.get("mitm"): return
+            self._fin()
 
-    def _calculate_score(self):
-        base = 100
-        penalty = self.hints_used * 15
-        time_penalty = max(0, int(self.elapsed - 30) // 10) * 5
-        return max(10, base - penalty - time_penalty)
+    def _cmitm(self):
+        if self.mitm_answer is None: return
+        ok = "SI" if self.mitm_is_attack else "NO"
+        if self.mitm_answer == ok:
+            self.score += 40
+            if self.mitm_is_attack and self.mitm_which == "B": self.score += 10
+        else: self.score = max(0, self.score - 40)
+        self._fin()
 
-    # ------------------------------------------------------------------
-    # Update
-    # ------------------------------------------------------------------
+    def _fin(self):
+        if self.timer_max > 0 and self.timer > 0: self.score += int(self.timer * 0.5)
+        self.score += 30; self.round_idx += 1
+        if self.round_idx >= len(_ROUNDS):
+            self.phase = "finished"
+            self.manager.complete_puzzle("diffie_hellman", self.score)
+            ms = self.manager.dialogues.get("diffie_hellman", {}).get("success", [])
+            if ms: self.dialogue.show(ms)
+        else:
+            self.dialogue.show(
+                [{"speaker": "NOVA", "text": f"Ronda {self.round_idx} completada. "
+                  f"Puntuacion: {self.score}. Preparate."}], on_complete=self._intro_round)
 
+    # ── Update ──
     def update(self, dt):
-        self.dialogue.update(dt)
+        self.dialogue.update(dt); self.anim_t += dt
+        if self.nova_timer > 0: self.nova_timer -= dt
+        if self.phase == "play" and self.timer_max > 0:
+            self.timer -= dt
+            if self.timer <= 0: self.timer = 0; self._fin()
 
-        if self.phase == "interact":
-            self.elapsed += dt
-
-        # Animation timers
-        self.transmit_blink += dt
-        self.pulse_timer += dt
-
-        if self.arrow_left_active:
-            self.arrow_left_timer += dt
-            if self.arrow_left_timer > 1.2:
-                self.arrow_left_active = False
-
-        if self.arrow_right_active:
-            self.arrow_right_timer += dt
-
-        if self.phase == "success":
-            self.success_timer += dt
-
-    # ------------------------------------------------------------------
-    # Draw
-    # ------------------------------------------------------------------
-
+    # ── Draw ──
     def draw(self, surface):
-        surface.blit(self.floor_surf, (0, 0))
-
-        # Decorative sprites
-        for img, x, y in self.decor_sprites:
-            faded = img.copy()
-            faded.set_alpha(25)
-            surface.blit(faded, (x, y))
-
-        # Three columns
-        self._draw_column_left(surface)
-        self._draw_column_center(surface)
-        self._draw_column_right(surface)
-
-        # Arrows between columns
-        self._draw_arrows(surface)
-
-        # Educational sidebar
-        self._draw_sidebar(surface)
-
-        # Confirm button
-        if self.phase == "interact":
-            self._draw_button(surface, self.btn_rect, "CONFIRMAR CLAVE",
-                              self.btn_hovered, C_DH)
-
-        # Bottom bar buttons
-        self._draw_button(surface, self.back_rect, "< VOLVER",
-                          self.back_hovered, C_ACCENT, small=True)
-        if self.phase == "interact":
-            self._draw_button(surface, self.hint_rect, "PISTA",
-                              self.hint_hovered, C_AMBER, small=True)
-
-        # Transmit indicator
-        self._draw_transmit_indicator(surface)
-
-        # Success overlay
-        if self.phase == "success" and self.success_timer > 0.5:
-            self._draw_success_overlay(surface)
-
-        # HUD
+        surface.fill(C_BG); draw_office_floor(surface); draw_wall(surface, 50, 30)
+        draw_server_rack(surface, 1180, 100, h=120)
+        draw_monitor(surface, 1100, 300, text="DH-KEY", text_color=C_DH)
         self.hud.draw(surface)
-
-        # Dialogue on top
+        self._dleft(surface); self._dcenter(surface); self._dright(surface)
+        self.calc.draw(surface)
+        _btn(surface, self.back_rect, "< VOLVER", self.fi, C_ACCENT)
+        if self.nova_timer > 0 and self.nova_msg:
+            r = pygame.Rect(20, HEIGHT - 80, WIDTH - 40, 36)
+            bg = pygame.Surface((r.w, r.h), pygame.SRCALPHA); bg.fill((8, 10, 18, 220))
+            surface.blit(bg, r.topleft); pygame.draw.rect(surface, C_NEON, r, 1, border_radius=3)
+            pf = self.fl.render("NOVA: ", True, C_NEON); surface.blit(pf, (r.x + 8, r.y + 9))
+            surface.blit(self.fi.render(self.nova_msg[:80], True, C_TEXT_PRI),
+                         (r.x + 8 + pf.get_width(), r.y + 10))
+        if self.phase == "finished": self._debrief(surface)
         self.dialogue.draw(surface)
 
-    # ------------------------------------------------------------------
-    # Column renderers
-    # ------------------------------------------------------------------
+    def _dleft(self, surface):
+        r = pygame.Rect(20, 50, 310, 420); _panel(surface, r, C_DH)
+        y = r.y + 8; _ctxt(surface, self.ft, "CANAL INTERCEPTADO", r.x, r.w, y, C_DH)
+        y += 28; pygame.draw.line(surface, C_BORDER, (r.x + 10, y), (r.x + r.w - 10, y)); y += 14
+        ax, bx = r.x + 40, r.x + r.w - 90
+        for nx, nw, lb, c in [(ax,80,"ALICE",C_ACCENT),(bx,80,"BOB",C_GREEN)]:
+            nr = pygame.Rect(nx, y, nw, 32)
+            pygame.draw.rect(surface, C_BG3, nr, border_radius=4)
+            pygame.draw.rect(surface, c, nr, 1, border_radius=4)
+            _ctxt(surface, self.fl, lb, nr.x, nr.w, nr.y + 8, c)
+        ly = y + 16; lx1, lx2 = ax + 84, bx - 4
+        pygame.draw.line(surface, C_BORDER, (lx1, ly), (lx2, ly))
+        dot_off = int(self.anim_t * 40) % max(1, lx2 - lx1)
+        pygame.draw.circle(surface, C_DH, (lx1 + dot_off, ly), 3)
+        y += 44
+        if self._cfg.get("mitm"):
+            ne = pygame.Rect(r.x + r.w // 2 - 40, y, 80, 28)
+            pygame.draw.rect(surface, C_BG3, ne, border_radius=4)
+            pygame.draw.rect(surface, C_RED, ne, 2, border_radius=4)
+            _ctxt(surface, self.fl, "EVE", ne.x, ne.w, ne.y + 6, C_RED); y += 36
+        y += 8
+        for lb, val, xo in [("g", self._g, 20), ("p", self._p, 160)]:
+            t1 = self.fl.render(f"{lb}:", True, C_TEXT_SEC)
+            t2 = self.fv.render(str(val), True, C_TEXT_PRI)
+            surface.blit(t1, (r.x + xo, y)); surface.blit(t2, (r.x + xo + t1.get_width() + 4, y))
+        y += 28
+        t1 = self.fl.render("B:", True, C_TEXT_SEC)
+        t2 = self.fv.render(str(self._B), True, C_AMBER)
+        surface.blit(t1, (r.x + 20, y)); surface.blit(t2, (r.x + 20 + t1.get_width() + 4, y)); y += 36
+        if self._cfg.get("mitm"):
+            pygame.draw.line(surface, C_BORDER, (r.x + 10, y), (r.x + r.w - 10, y)); y += 8
+            _ctxt(surface, self.fl, "FIRMA CipherBureau", r.x, r.w, y, C_RED); y += 20
+            surface.blit(self.fv.render(f"hash(B) = {self.mitm_signed_hash}", True, C_RED),
+                         (r.x + 20, y)); y += 22
+            surface.blit(self.fi.render("hash = sum_digitos(B) mod p", True, C_TEXT_HINT),
+                         (r.x + 20, y))
 
-    def _draw_column_panel(self, surface, x, y, w, h, title, color):
-        panel = pygame.Surface((w, h), pygame.SRCALPHA)
-        panel.fill((C_PANEL[0], C_PANEL[1], C_PANEL[2], 200))
-        pygame.draw.rect(panel, (*color, 180), panel.get_rect(), 2)
-        pygame.draw.line(panel, (*color, 200), (0, 0), (w, 0), 3)
-        surface.blit(panel, (x, y))
+    def _dcenter(self, surface):
+        r = pygame.Rect(350, 50, 560, 420); _panel(surface, r, C_DH)
+        y = r.y + 8; rn = min(self.round_idx + 1, 3)
+        _ctxt(surface, self.ft, f"TERMINAL DE CALCULO -- RONDA {rn}/3", r.x, r.w, y, C_DH)
+        y += 28; pygame.draw.line(surface, C_BORDER, (r.x + 10, y), (r.x + r.w - 10, y))
+        if self.phase not in ("play", "round_done"): return
+        x0 = r.x + 16; show_aid = self.diff <= DIFFICULTY_MID or self._cfg.get("guided", False)
+        sy = r.y + 52; a_val = self._ga()
+        prompts = [("> STEP 1: Elige secreto a (2-20)", "a"),
+                   ("> STEP 2: Calcula A = g^a mod p", "A"),
+                   ("> STEP 3: Calcula K = B^a mod p", "K")]
+        aids = None
+        if self.diff == DIFFICULTY_DUMMY:
+            aids = [f"   [TIP] a entre 2 y 20",
+                    f"   [TIP] A = {self._g}^a mod {self._p}" + (f" = {pow(self._g,a_val,self._p)}" if a_val else ""),
+                    f"   [TIP] K = {self._B}^a mod {self._p}" + (f" = {pow(self._B,a_val,self._p)}" if a_val else "")]
+        elif show_aid:
+            aids = [f"   a en [2, 20]", f"   A = {self._g}^a mod {self._p}", f"   K = {self._B}^a mod {self._p}"]
+        for i, (prompt, _) in enumerate(prompts):
+            step = self.steps[i] if i < len(self.steps) else None
+            col = C_GREEN if (step and step.locked) else C_TERM_GREEN
+            pfx = "[OK] " if (step and step.locked) else ""
+            surface.blit(self.fl.render(pfx + prompt, True, col), (x0, sy)); sy += 18
+            if aids and i < len(aids):
+                surface.blit(self.fi.render(aids[i], True, C_TEXT_HINT), (x0, sy)); sy += 16
+            if step:
+                step.rect.topleft = (x0 + 120, sy); step.draw(surface, self.ff)
+                if step.active and not step.locked:
+                    self.conf_rect.topleft = (step.rect.right + 8, step.rect.y)
+                    _btn(surface, self.conf_rect, "CONFIRMAR", self.fi, C_GREEN)
+            sy += 36
+        if self._cfg.get("mitm") and all(s.locked for s in self.steps):
+            surface.blit(self.fl.render("> STEP 4: Ataque MITM?", True, C_TERM_GREEN), (x0, sy))
 
-        title_surf = self.font_title.render(title, True, color)
-        surface.blit(title_surf, (x + w // 2 - title_surf.get_width() // 2, y + 10))
+    def _dright(self, surface):
+        r = pygame.Rect(930, 50, 330, 420); _panel(surface, r, C_ACCENT)
+        y = r.y + 8; _ctxt(surface, self.ft, "INTEL", r.x, r.w, y, C_ACCENT); y += 28
+        if self.timer_max > 0 and self.phase == "play":
+            tc = C_RED if self.timer < 15 else C_DH
+            _ctxt(surface, self.fb, f"TIEMPO: {int(self.timer)}s", r.x, r.w, y, tc)
+            bw = r.w - 40; ratio = max(0, self.timer / self.timer_max)
+            pygame.draw.rect(surface, C_BG3, (r.x+20, y+30, bw, 8), border_radius=3)
+            bc = C_GREEN if ratio > .4 else (C_AMBER if ratio > .15 else C_RED)
+            pygame.draw.rect(surface, bc, (r.x+20, y+30, int(bw*ratio), 8), border_radius=3); y += 50
+        t1 = self.fl.render("SCORE:", True, C_TEXT_SEC)
+        t2 = self.fv.render(str(self.score), True, C_GREEN)
+        surface.blit(t1, (r.x+20, y)); surface.blit(t2, (r.x+20+t1.get_width()+4, y)); y += 30
+        if self.diff <= DIFFICULTY_MID:
+            for ln in ["Usa la calculadora abajo:","  X^YmodZ y pulsa =","  click campo = transferir"]:
+                surface.blit(self.fi.render(ln, True, C_TEXT_HINT), (r.x+15, y)); y += 16
+            y += 4
+        y = max(y, r.y + 200)
+        surface.blit(self.fl.render("PISTAS:", True, C_TEXT_SEC), (r.x+15, y)); y += 22
+        for i, hr in enumerate(self.hint_rects):
+            hr.topleft = (r.x+15, y)
+            if self.hint_states[i]: bc_h, lbl = C_TEXT_HINT, f"Pista {i+1} [usada]"
+            elif i < self.free_left: bc_h, lbl = C_GREEN, f"Pista {i+1} [gratis]"
+            else: bc_h, lbl = C_AMBER, f"Pista {i+1} [-10pts]"
+            _btn(surface, hr, lbl, self.fi, bc_h, self.hint_states[i]); y += 32
+        if self._cfg.get("mitm") and self.phase == "play":
+            y = max(y, r.y + 320)
+            pygame.draw.line(surface, C_BORDER, (r.x+10, y), (r.x+r.w-10, y)); y += 6
+            _ctxt(surface, self.fl, "DETECCION MITM", r.x, r.w, y, C_RED); y += 20
+            surface.blit(self.fi.render("Ataque MITM?", True, C_TEXT_SEC), (r.x+15, y))
+            self.btn_si.topleft = (r.x+150, y-2); self.btn_no.topleft = (r.x+220, y-2)
+            _btn(surface, self.btn_si, "SI", self.fl, C_GREEN, self.mitm_answer == "SI")
+            _btn(surface, self.btn_no, "NO", self.fl, C_GREEN, self.mitm_answer == "NO"); y += 28
+            surface.blit(self.fi.render("Valor manipulado:", True, C_TEXT_SEC), (r.x+15, y))
+            self.btn_a.topleft = (r.x+150, y-2); self.btn_b.topleft = (r.x+220, y-2)
+            _btn(surface, self.btn_a, "A", self.fl, C_AMBER, self.mitm_which == "A")
+            _btn(surface, self.btn_b, "B", self.fl, C_AMBER, self.mitm_which == "B"); y += 28
+            self.btn_mc.topleft = (r.x+15, y)
+            _btn(surface, self.btn_mc, "CONFIRMAR MITM", self.fl, C_RED)
 
-    def _draw_column_left(self, surface):
-        x, y, w, h = _COL_LEFT_X, _COL_TOP, _COL_W, 230
-        self._draw_column_panel(surface, x, y, w, h, "AGENTE A -- TU", C_GREEN)
-
-        # Secret slider
-        label = self.font_label.render("Secreto a:", True, C_TEXT_SEC)
-        surface.blit(label, (x + 20, _SLIDER_Y - 30))
-
-        # Slider track
-        track_color = C_BORDER
-        pygame.draw.rect(surface, track_color,
-                         (self.slider_x, _SLIDER_Y, _SLIDER_W, _SLIDER_H), 0, 4)
-
-        # Tick marks
-        for i in range(20):
-            t = i / 19.0
-            tx = self.slider_x + int(t * (_SLIDER_W - _HANDLE_W)) + _HANDLE_W // 2
-            if (i + 1) % 5 == 0:
-                pygame.draw.line(surface, C_TEXT_HINT,
-                                 (tx, _SLIDER_Y + _SLIDER_H + 2),
-                                 (tx, _SLIDER_Y + _SLIDER_H + 8), 1)
-                num = self.font_edu.render(str(i + 1), True, C_TEXT_HINT)
-                surface.blit(num, (tx - num.get_width() // 2,
-                                   _SLIDER_Y + _SLIDER_H + 10))
-
-        # Handle
-        handle_color = C_DH if self.dragging_slider else C_ACCENT
-        pygame.draw.rect(surface, handle_color, self.handle_rect, 0, 3)
-        pygame.draw.rect(surface, C_WHITE, self.handle_rect, 1, 3)
-
-        # Current value display
-        val_surf = self.font_value.render(str(self.secret_a), True, C_DH)
-        surface.blit(val_surf, (
-            self.slider_x + _SLIDER_W + 16,
-            _SLIDER_Y - 10
-        ))
-
-        # Calculated A
-        cy = _SLIDER_Y + 50
-        a_label = self.font_math.render(
-            f"A = g^a mod p = {_G}^{self.secret_a} mod {_P}", True, C_TEXT_SEC)
-        surface.blit(a_label, (x + 20, cy))
-        a_val = self.font_big.render(f"A = {self.a_public}", True, C_GREEN)
-        surface.blit(a_val, (x + 20, cy + 22))
-
-        # Shared key
-        cy2 = cy + 56
-        k_label = self.font_math.render(
-            f"K = B^a mod p = {_B_PUBLIC}^{self.secret_a} mod {_P}", True, C_TEXT_SEC)
-        surface.blit(k_label, (x + 20, cy2))
-        k_val = self.font_big.render(f"K = {self.shared_key_player}", True, C_AMBER)
-        surface.blit(k_val, (x + 20, cy2 + 22))
-
-    def _draw_column_center(self, surface):
-        x, y, w, h = _COL_CENTER_X, _COL_TOP, _COL_W, 230
-        self._draw_column_panel(surface, x, y, w, h, "CANAL PUBLICO", C_ACCENT)
-
-        # Parameters
-        cy = y + 40
-        g_text = self.font_label.render(f"g = {_G}  (base)", True, C_TEXT_PRI)
-        surface.blit(g_text, (x + w // 2 - g_text.get_width() // 2, cy))
-        p_text = self.font_label.render(f"p = {_P}  (primo)", True, C_TEXT_PRI)
-        surface.blit(p_text, (x + w // 2 - p_text.get_width() // 2, cy + 24))
-
-        # Divider
-        div_y = cy + 60
-        pygame.draw.line(surface, C_BORDER, (x + 20, div_y), (x + w - 20, div_y), 1)
-
-        # Public values
-        pub_y = div_y + 14
-        a_pub = self.font_math.render(f"A (publico) = {self.a_public}", True, C_GREEN)
-        surface.blit(a_pub, (x + w // 2 - a_pub.get_width() // 2, pub_y))
-
-        b_pub = self.font_math.render(f"B (publico) = {_B_PUBLIC}", True, C_RED)
-        surface.blit(b_pub, (x + w // 2 - b_pub.get_width() // 2, pub_y + 28))
-
-        # Warning text
-        warn_y = pub_y + 68
-        warn = self.font_edu.render("Visible para cualquier interceptor", True, C_TEXT_HINT)
-        surface.blit(warn, (x + w // 2 - warn.get_width() // 2, warn_y))
-
-    def _draw_column_right(self, surface):
-        x, y, w, h = _COL_RIGHT_X, _COL_TOP, _COL_W, 230
-        self._draw_column_panel(surface, x, y, w, h, "AGENTE B -- SOSPECHOSO", C_RED)
-
-        cy = y + 44
-        # Secret hidden
-        sec = self.font_label.render("Secreto: ???", True, C_RED)
-        surface.blit(sec, (x + 20, cy))
-
-        # B public
-        cy2 = cy + 36
-        b_label = self.font_math.render(
-            f"B = g^b mod p = {_G}^? mod {_P}", True, C_TEXT_SEC)
-        surface.blit(b_label, (x + 20, cy2))
-        b_val = self.font_big.render(f"B = {_B_PUBLIC}", True, C_RED)
-        surface.blit(b_val, (x + 20, cy2 + 22))
-
-        # Shared key hidden
-        cy3 = cy2 + 58
-        k_label = self.font_math.render("K = A^b mod p = ???", True, C_TEXT_SEC)
-        surface.blit(k_label, (x + 20, cy3))
-
-        if self.phase == "success":
-            k_val = self.font_big.render(f"K = {self.shared_key_real}", True, C_AMBER)
-        else:
-            k_val = self.font_big.render("K = ???", True, C_TEXT_HINT)
-        surface.blit(k_val, (x + 20, cy3 + 22))
-
-    # ------------------------------------------------------------------
-    # Arrows
-    # ------------------------------------------------------------------
-
-    def _draw_arrows(self, surface):
-        mid_y_top = _COL_TOP + 130
-        mid_y_bot = _COL_TOP + 170
-        left_end = _COL_LEFT_X + _COL_W
-        center_start = _COL_CENTER_X
-        center_end = _COL_CENTER_X + _COL_W
-        right_start = _COL_RIGHT_X
-
-        # Left -> Center arrow (sending A)
-        if self.arrow_left_active:
-            progress = min(1.0, self.arrow_left_timer / 1.0)
-            ax = left_end + int(progress * (center_start - left_end))
-            color = C_GREEN
-            # Arrow line
-            pygame.draw.line(surface, color, (left_end + 4, mid_y_top), (ax, mid_y_top), 2)
-            # Arrowhead
-            pygame.draw.polygon(surface, color, [
-                (ax, mid_y_top),
-                (ax - 8, mid_y_top - 5),
-                (ax - 8, mid_y_top + 5),
-            ])
-            # Label
-            if progress < 0.8:
-                lbl = self.font_edu.render("enviando A...", True, C_GREEN)
-                surface.blit(lbl, (left_end + 8, mid_y_top - 18))
-        else:
-            # Static completed arrow
-            pygame.draw.line(surface, (*C_GREEN, 80), (left_end + 4, mid_y_top),
-                             (center_start - 4, mid_y_top), 1)
-            _draw_arrowhead(surface, center_start - 4, mid_y_top, C_GREEN)
-
-        # Center -> Left arrow (receiving B)
-        color_b = (*C_RED, 160) if not self.arrow_right_active else C_RED
-        pygame.draw.line(surface, C_RED,
-                         (center_start - 4, mid_y_bot),
-                         (left_end + 4, mid_y_bot), 1)
-        _draw_arrowhead_left(surface, left_end + 4, mid_y_bot, C_RED)
-        lbl_b = self.font_edu.render(f"B={_B_PUBLIC}", True, C_RED)
-        surface.blit(lbl_b, (left_end + 8, mid_y_bot + 4))
-
-        # Right -> Center arrow (B published)
-        pygame.draw.line(surface, C_RED,
-                         (right_start - 4, mid_y_top),
-                         (center_end + 4, mid_y_top), 1)
-        _draw_arrowhead_left(surface, center_end + 4, mid_y_top, C_RED)
-
-        # Center -> Right arrow (A published)
-        pygame.draw.line(surface, C_GREEN,
-                         (center_end + 4, mid_y_bot),
-                         (right_start - 4, mid_y_bot), 1)
-        _draw_arrowhead(surface, right_start - 4, mid_y_bot, C_GREEN)
-
-    # ------------------------------------------------------------------
-    # Educational sidebar
-    # ------------------------------------------------------------------
-
-    def _draw_sidebar(self, surface):
-        sx, sy = 440, 340
-        sw, sh = 380, 240
-        panel = pygame.Surface((sw, sh), pygame.SRCALPHA)
-        panel.fill((C_PANEL[0], C_PANEL[1], C_PANEL[2], 180))
-        pygame.draw.rect(panel, (*C_DH, 120), panel.get_rect(), 1)
-        surface.blit(panel, (sx, sy))
-
-        lines = [
-            ("DIFFIE-HELLMAN", C_DH, True),
-            ("", None, False),
-            ("g, p: parametros publicos", C_TEXT_SEC, False),
-            ("a, b: secretos privados", C_TEXT_SEC, False),
-            ("", None, False),
-            ("A = g^a mod p  (publico)", C_GREEN, False),
-            ("B = g^b mod p  (publico)", C_RED, False),
-            ("", None, False),
-            ("K = B^a = A^b  (compartida!)", C_AMBER, False),
-            ("", None, False),
-            ("Nadie en el canal puede", C_TEXT_HINT, False),
-            ("calcular K sin a o b", C_TEXT_HINT, False),
-        ]
-
-        cy = sy + 10
-        for text, color, bold in lines:
-            if not text:
-                cy += 6
-                continue
-            font = self.font_label if bold else self.font_edu
-            txt = font.render(text, True, color)
-            surface.blit(txt, (sx + 16, cy))
-            cy += txt.get_height() + 3
-
-    # ------------------------------------------------------------------
-    # Transmit indicator
-    # ------------------------------------------------------------------
-
-    def _draw_transmit_indicator(self, surface):
-        blink_on = math.sin(self.transmit_blink * 4.0) > 0
-        color = C_RED if blink_on else C_TEXT_HINT
-        indicator_x = WIDTH - 240
-        indicator_y = 52
-
-        pygame.draw.circle(surface, color, (indicator_x, indicator_y + 6), 5)
-        txt = self.font_label.render("TRANSMISION ACTIVA", True, color)
-        surface.blit(txt, (indicator_x + 12, indicator_y))
-
-    # ------------------------------------------------------------------
-    # Buttons
-    # ------------------------------------------------------------------
-
-    def _draw_button(self, surface, rect, text, hovered, color, small=False):
-        panel = pygame.Surface((rect.w, rect.h), pygame.SRCALPHA)
-        bg_alpha = 200 if hovered else 150
-        panel.fill((C_PANEL[0], C_PANEL[1], C_PANEL[2], bg_alpha))
-        border_c = tuple(min(c + 40, 255) for c in color) if hovered else color
-        bw = 2 if hovered else 1
-        pygame.draw.rect(panel, (*border_c, 220), panel.get_rect(), bw)
-        surface.blit(panel, rect.topleft)
-
-        font = self.font_small if small else self.font_btn
-        lbl = font.render(text, True, color if not hovered else C_WHITE)
-        surface.blit(lbl, (
-            rect.centerx - lbl.get_width() // 2,
-            rect.centery - lbl.get_height() // 2
-        ))
-
-    # ------------------------------------------------------------------
-    # Success overlay
-    # ------------------------------------------------------------------
-
-    def _draw_success_overlay(self, surface):
-        alpha = min(180, int((self.success_timer - 0.5) * 300))
-        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, alpha))
-        surface.blit(overlay, (0, 0))
-
-        if self.success_timer > 1.0:
-            # Green glow text
-            txt = self.font_value.render("CLAVE COMPARTIDA VERIFICADA", True, C_GREEN)
-            tx = WIDTH // 2 - txt.get_width() // 2
-            ty = HEIGHT // 2 - 60
-            # Glow
-            glow = self.font_value.render("CLAVE COMPARTIDA VERIFICADA", True, C_GREEN)
-            glow.set_alpha(60)
-            surface.blit(glow, (tx - 2, ty - 1))
-            surface.blit(glow, (tx + 2, ty + 1))
-            surface.blit(txt, (tx, ty))
-
-            # Show matching keys
-            key_text = self.font_big.render(
-                f"K(A) = {self.shared_key_player}  ==  K(B) = {self.shared_key_real}",
-                True, C_AMBER)
-            surface.blit(key_text, (
-                WIDTH // 2 - key_text.get_width() // 2,
-                ty + 50
-            ))
-
-            # Score
-            score = self.manager.scores.get("diffie_hellman", 0)
-            score_txt = self.font_label.render(
-                f"Puntuacion: {score} pts", True, C_TEXT_SEC)
-            surface.blit(score_txt, (
-                WIDTH // 2 - score_txt.get_width() // 2,
-                ty + 90
-            ))
-
-
-# ------------------------------------------------------------------
-# Module-level helper drawing functions
-# ------------------------------------------------------------------
-
-def _draw_arrowhead(surface, x, y, color):
-    pygame.draw.polygon(surface, color, [
-        (x, y),
-        (x - 7, y - 4),
-        (x - 7, y + 4),
-    ])
-
-
-def _draw_arrowhead_left(surface, x, y, color):
-    pygame.draw.polygon(surface, color, [
-        (x, y),
-        (x + 7, y - 4),
-        (x + 7, y + 4),
-    ])
+    # ── Debrief overlay ──
+    def _debrief(self, surface):
+        ov = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA); ov.fill((0, 0, 0, 180))
+        surface.blit(ov, (0, 0))
+        dr = pygame.Rect(WIDTH // 2 - 220, HEIGHT // 2 - 140, 440, 280)
+        _panel(surface, dr, C_DH)
+        y = dr.y + 20
+        _ctxt(surface, self.fb, "PROTOCOLO COMPLETADO", dr.x, dr.w, y, C_GREEN); y += 40
+        for lb, val, c in [("Puntuacion final:", str(self.score), C_DH),
+                           ("Errores:", str(self.errors), C_RED),
+                           ("Pistas usadas:", str(self.hints_used), C_AMBER),
+                           ("Dificultad:", ["DUMMY","MID","SENIOR","NOOB"][min(self.diff,3)], C_ACCENT)]:
+            surface.blit(self.fl.render(lb, True, C_TEXT_SEC), (dr.x + 40, y))
+            surface.blit(self.fv.render(val, True, c), (dr.x + 240, y))
+            y += 28
+        y += 16
+        _ctxt(surface, self.fi, "Click VOLVER para regresar al hub", dr.x, dr.w, y, C_TEXT_HINT)

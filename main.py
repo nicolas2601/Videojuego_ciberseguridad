@@ -5,8 +5,17 @@ from game.constants import WIDTH, HEIGHT, FPS, TITLE
 
 def main():
     pygame.init()
+    pygame.mixer.init()
     pygame.display.set_caption(TITLE)
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
+
+    # Musica de fondo
+    import os
+    music_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "musica.mp3")
+    if os.path.exists(music_path):
+        pygame.mixer.music.load(music_path)
+        pygame.mixer.music.set_volume(0.3)
+        pygame.mixer.music.play(-1)
     clock = pygame.time.Clock()
 
     manager = SceneManager(screen)
