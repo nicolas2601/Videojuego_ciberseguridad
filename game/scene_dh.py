@@ -103,7 +103,7 @@ class _Calculator:
 
 class _Field:
     def __init__(self, label, x, y, w, fn, rng=None):
-        self.label, self.rect, self.fn, self.rng = label, pygame.Rect(x,y,w,26), fn, rng
+        self.label, self.rect, self.fn, self.rng = label, pygame.Rect(x,y,w,30), fn, rng
         self.value, self.locked, self.correct, self.active, self.blink = "", False, None, False, 0.
 
     def confirm(self):
@@ -123,12 +123,12 @@ class _Field:
         pygame.draw.rect(surface, C_TERM_BG, self.rect, border_radius=2)
         pygame.draw.rect(surface, bc, self.rect, 2 if self.active else 1, border_radius=2)
         ts = font.render(self.value, True, C_TEXT_PRI)
-        surface.blit(ts, (self.rect.x+4, self.rect.y+4))
+        surface.blit(ts, (self.rect.x+4, self.rect.y+6))
         if self.active and not self.locked:
             self.blink += 0.06
             if math.sin(self.blink*4) > 0:
                 cx = self.rect.x + 4 + ts.get_width() + 1
-                pygame.draw.line(surface, C_DH, (cx, self.rect.y+4), (cx, self.rect.y+22))
+                pygame.draw.line(surface, C_DH, (cx, self.rect.y+5), (cx, self.rect.y+25))
 
 
 class DHScene:
@@ -176,26 +176,34 @@ class DHScene:
             self.mitm_signed_hash = _dighash(B_real, p)
         else: B_shown = B_real; self.mitm_is_attack = False
         self._cfg, self._g, self._p, self._B, self._Br = cfg, g, p, B_shown, B_real
-        self.fields = []; cx, fw = 380, 80
+        self.fields = []
         if cfg["guided"]:
-            y0 = 90
+            # Panel r = Rect(340, 60, 600, 410), usable x: 340-940
+            rx = 340; y0 = 60  # panel origin
+            # Row: "a = [____]"  aligned with label at x0+160
+            fx = rx + 180; fw = 90; fws = 65
             self.fields += [
-                _Field("a", cx+200, y0+60, fw, lambda v: 2<=v<=20, (2,20)),
-                _Field("g_fill", cx+80, y0+100, 50, lambda v,_g=g: v==_g),
-                _Field("a_fill", cx+140, y0+100, 50, lambda v: v==self._ga()),
-                _Field("p_fill", cx+220, y0+100, 50, lambda v,_p=p: v==_p),
-                _Field("A", cx+200, y0+140, fw, lambda v: v==pow(g,self._ga(),p)),
-                _Field("B_fill", cx+80, y0+220, 50, lambda v: v==self._B),
-                _Field("a_fill2", cx+140, y0+220, 50, lambda v: v==self._ga()),
-                _Field("p_fill2", cx+220, y0+220, 50, lambda v,_p=p: v==_p),
-                _Field("K", cx+200, y0+260, fw, lambda v: v==pow(self._B,self._ga(),p)),
+                _Field("a", fx, y0+108, fw, lambda v: 2<=v<=20, (2,20)),
+                # A = [g] ^ [a] mod [p]  -- three fill fields
+                _Field("g_fill", rx+60, y0+168, fws, lambda v,_g=g: v==_g),
+                _Field("a_fill", rx+170, y0+168, fws, lambda v: v==self._ga()),
+                _Field("p_fill", rx+310, y0+168, fws, lambda v,_p=p: v==_p),
+                # A = [result]
+                _Field("A", fx, y0+208, fw, lambda v: v==pow(g,self._ga(),p)),
+                # K = [B] ^ [a] mod [p]  -- three fill fields
+                _Field("B_fill", rx+60, y0+298, fws, lambda v: v==self._B),
+                _Field("a_fill2", rx+170, y0+298, fws, lambda v: v==self._ga()),
+                _Field("p_fill2", rx+310, y0+298, fws, lambda v,_p=p: v==_p),
+                # K = [result]
+                _Field("K", fx, y0+338, fw, lambda v: v==pow(self._B,self._ga(),p)),
             ]
         else:
-            y0 = 120
+            rx = 340; fx = rx + 180; fw = 90; y0 = 60
+            yb = y0 + 80
             self.fields += [
-                _Field("a", cx+200, y0, fw, lambda v: 2<=v<=20, (2,20)),
-                _Field("A", cx+200, y0+50, fw, lambda v: v==pow(g,self._ga(),p)),
-                _Field("K", cx+200, y0+100, fw, lambda v: v==pow(self._B,self._ga(),p)),
+                _Field("a", fx, yb, fw, lambda v: 2<=v<=20, (2,20)),
+                _Field("A", fx, yb+50, fw, lambda v: v==pow(g,self._ga(),p)),
+                _Field("K", fx, yb+100, fw, lambda v: v==pow(self._B,self._ga(),p)),
             ]
         self.afi = 0
         if self.fields: self.fields[0].active = True
@@ -359,22 +367,47 @@ class DHScene:
         _ctxt(surface, self.ft, f"HOJA DE CALCULO -- RONDA {rn}/3", r.x, r.w, y, C_DH)
         y += 28; pygame.draw.line(surface, C_BORDER, (r.x+10,y), (r.x+r.w-10,y))
         if self.phase in ("play", "round_done"):
-            x0, y0 = r.x+20, r.y+50
+            x0 = r.x + 20
             if self._cfg["guided"]:
-                for yy, tx in [(y0,"Parametros publicos:"),
-                    (y0+20,f"  g = {self._g}        p = {self._p}"),
-                    (y0+50,"Tu secreto:"), (y0+68,"  a = "),
-                    (y0+100,"Calcula tu valor publico:"), (y0+118,"  A =    ^    mod"),
-                    (y0+148,"  A = "), (y0+180,f"B interceptado: B = {self._B}"),
-                    (y0+210,"Calcula clave compartida:"), (y0+228,"  K =    ^    mod"),
-                    (y0+268,"  K = ")]:
-                    surface.blit(self.fv.render(tx, True, C_TEXT_SEC), (x0, yy))
+                # All Y values are absolute, matching field positions from _start_round
+                # Fields use fy0=60 (panel origin). Labels align to same absolute Y.
+                fy0 = 60  # same as _start_round y0
+                # Parametros publicos (above the "a" field at fy0+108=168)
+                surface.blit(self.fv.render("Parametros publicos:", True, C_TEXT_SEC), (x0, fy0+50))
+                surface.blit(self.fv.render(f"  g = {self._g}        p = {self._p}", True, C_TEXT_SEC), (x0, fy0+68))
+                # Tu secreto -- label aligned with "a" field at fy0+108
+                surface.blit(self.fv.render("Tu secreto:", True, C_TEXT_SEC), (x0, fy0+90))
+                surface.blit(self.fv.render("  a =", True, C_TEXT_SEC), (x0, fy0+112))
+                # --- field "a" at (520, 168) ---
+                # Calcula tu valor publico
+                surface.blit(self.fv.render("Calcula tu valor publico:", True, C_TEXT_SEC), (x0, fy0+148))
+                # A = [g] ^ [a] mod [p] -- fill row at fy0+168=228
+                surface.blit(self.fv.render("  A =", True, C_TEXT_SEC), (x0, fy0+172))
+                # Operators between fill fields
+                gf_right = r.x + 60 + 65; af_left = r.x + 170
+                af_right = r.x + 170 + 65; pf_left = r.x + 310
+                op_caret = self.fv.render("^", True, C_DH)
+                op_mod = self.fv.render("mod", True, C_DH)
+                surface.blit(op_caret, (gf_right + (af_left - gf_right - op_caret.get_width())//2, fy0+172))
+                surface.blit(op_mod, (af_right + (pf_left - af_right - op_mod.get_width())//2, fy0+172))
+                # A = [result] at fy0+208=268
+                surface.blit(self.fv.render("  A =", True, C_TEXT_SEC), (x0, fy0+212))
+                # B interceptado
+                surface.blit(self.fv.render(f"B interceptado: B = {self._B}", True, C_AMBER), (x0, fy0+250))
+                # Calcula clave compartida
+                surface.blit(self.fv.render("Calcula clave compartida:", True, C_TEXT_SEC), (x0, fy0+270))
+                # K = [B] ^ [a] mod [p] -- fill row at fy0+298=358
+                surface.blit(self.fv.render("  K =", True, C_TEXT_SEC), (x0, fy0+302))
+                surface.blit(op_caret, (gf_right + (af_left - gf_right - op_caret.get_width())//2, fy0+302))
+                surface.blit(op_mod, (af_right + (pf_left - af_right - op_mod.get_width())//2, fy0+302))
+                # K = [result] at fy0+338=398
+                surface.blit(self.fv.render("  K =", True, C_TEXT_SEC), (x0, fy0+342))
             else:
-                y1 = r.y+80
+                yb = r.y + 80
                 surface.blit(self.fl.render(f"g={self._g}  p={self._p}  B={self._B}",
-                             True, C_AMBER), (x0, y1))
-                for tx, dy in [("a = ",40),("A = ",90),("K = ",140)]:
-                    surface.blit(self.fv.render(tx, True, C_TEXT_SEC), (x0, y1+dy))
+                             True, C_AMBER), (x0, yb))
+                for tx, dy in [("a =", 40), ("A =", 90), ("K =", 140)]:
+                    surface.blit(self.fv.render(tx, True, C_TEXT_SEC), (x0, yb+dy))
             if 0 <= self.afi < len(self.fields):
                 af = self.fields[self.afi]
                 if not af.locked:

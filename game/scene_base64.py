@@ -141,11 +141,17 @@ class Base64Scene:
                 self.GX + c*(self.CS+4), self.GY + r*(self.CS+4), self.CS, self.CS))
 
     def _build_pal(self):
-        self.pal_r = []; pw, gap = 28, 2
-        tw = len(self.pal_chars)*(pw+gap)-gap
-        sx = max(20, (WIDTH-tw)//2)
-        for i in range(len(self.pal_chars)):
-            self.pal_r.append(pygame.Rect(sx+i*(pw+gap), 570, pw, 36))
+        self.pal_r = []; pw, gap = 26, 2
+        # Row 0: A-Z (26), Row 1: a-z (26), Row 2: 0-9+/ (12)
+        rows = [self.pal_chars[0:26], self.pal_chars[26:52], self.pal_chars[52:64]]
+        rh = 32; ry = 530
+        self.pal_rows = rows  # store for drawing
+        for ri, row in enumerate(rows):
+            tw = len(row) * (pw + gap) - gap
+            sx = max(20, (WIDTH - tw) // 2)
+            y = ry + ri * (rh + gap + 2)
+            for ci in range(len(row)):
+                self.pal_r.append(pygame.Rect(sx + ci * (pw + gap), y, pw, rh))
 
     def _round_done(self):
         for p in self.err_pos:
@@ -372,20 +378,43 @@ class Base64Scene:
 
     def _draw_pal(self, s):
         if not self.pal_r: return
-        pw = self.pal_r[-1].right - self.pal_r[0].x + 20
-        px = self.pal_r[0].x-10
-        ps = pygame.Surface((pw, 52), pygame.SRCALPHA); ps.fill((16,20,32,230))
-        s.blit(ps, (px, 562))
-        pygame.draw.rect(s, C_BASE64, (px, 562, pw, 52), 1, border_radius=3)
-        s.blit(self.f_stat.render("Seleccionar reemplazo:", True, C_TEXT_SEC), (px+4, 550))
+        # Background panel spanning all rows
+        top_y = self.pal_r[0].y - 18
+        bot_y = self.pal_r[-1].bottom + 4
+        left_x = min(pr.x for pr in self.pal_r) - 10
+        right_x = max(pr.right for pr in self.pal_r) + 10
+        ph = bot_y - top_y; pw_total = right_x - left_x
+        ps = pygame.Surface((pw_total, ph), pygame.SRCALPHA); ps.fill((16,20,32,230))
+        s.blit(ps, (left_x, top_y))
+        pygame.draw.rect(s, C_BASE64, (left_x, top_y, pw_total, ph), 1, border_radius=3)
+        s.blit(self.f_stat.render("Seleccionar reemplazo:", True, C_TEXT_SEC), (left_x+4, top_y-14))
+        # Determine correct char for highlight feedback
+        correct_char = None
+        if 0 <= self.sel < len(self.orig) and self.sel in self.err_pos:
+            correct_char = self.orig[self.sel]
         mx, my = pygame.mouse.get_pos()
+        pulse = int(80 + 60 * math.sin(self._t * 6))
         for i, pr in enumerate(self.pal_r):
+            ch = self.pal_chars[i]
             h = pr.collidepoint(mx, my)
+            is_correct = (correct_char is not None and ch == correct_char)
             cs = pygame.Surface((pr.w, pr.h), pygame.SRCALPHA)
-            cs.fill((60,80,140,180) if h else (20,24,36,180))
+            if is_correct:
+                cs.fill((20, 80, 30, 200))
+            elif h:
+                cs.fill((60, 80, 140, 180))
+            else:
+                cs.fill((20, 24, 36, 180))
             s.blit(cs, pr.topleft)
-            pygame.draw.rect(s, C_WHITE if h else (50,60,80), pr, 1, border_radius=2)
-            ct = self.f_pal.render(self.pal_chars[i], True, C_WHITE if h else C_BASE64)
+            if is_correct:
+                bc = (50, 255, 80, pulse + 80)
+                pygame.draw.rect(s, (50, 255, 80), pr, 2, border_radius=2)
+            elif h:
+                pygame.draw.rect(s, C_WHITE, pr, 1, border_radius=2)
+            else:
+                pygame.draw.rect(s, (50, 60, 80), pr, 1, border_radius=2)
+            tc = C_WHITE if (h or is_correct) else C_BASE64
+            ct = self.f_pal.render(ch, True, tc)
             s.blit(ct, (pr.x+(pr.w-ct.get_width())//2, pr.y+(pr.h-ct.get_height())//2))
 
     def _draw_debrief(self, s):
